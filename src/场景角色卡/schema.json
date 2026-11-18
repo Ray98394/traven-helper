@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "攻略角色": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "description": "角色名"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "好感度": {
+            "type": "number"
+          },
+          "是否恋人": {
+            "type": "boolean"
+          },
+          "表白已触发": {
+            "type": "boolean"
+          },
+          "拒绝后固定": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "好感度",
+          "是否恋人",
+          "表白已触发",
+          "拒绝后固定"
+        ]
+      }
+    }
+  },
+  "required": [
+    "攻略角色"
+  ]
+}
