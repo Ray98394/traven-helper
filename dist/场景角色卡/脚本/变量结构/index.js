@@ -1,2 +1,0 @@
-import{registerMvuSchema as e}from'https://testingcf.jsdelivr.net/gh/StageDog/tavern_resource/dist/util/mvu_zod.js';const o=z,r=o.z.object({攻略角色:o.z.record(o.z.string().describe('角色名'),o.z.object({好感度:o.z.coerce.number().transform(e=>_.clamp(Math.round(e),0,100)),是否恋人:o.z.boolean(),表白已触发:o.z.boolean(),拒绝后固定:o.z.boolean()}))});$(()=>{e(r)});
-//# sourceMappingURL=index.js.map
