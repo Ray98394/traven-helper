@@ -1,9 +1,15 @@
 import assert from 'node:assert/strict';
-import { recentPortraitAppearances } from '../功能/立绘出场.ts';
+import { isPortraitPresent, recentPortraitAppearances } from '../功能/立绘出场.ts';
 import { splitSceneDialogue } from '../功能/多角色对话.ts';
 import { narrativeOnly } from '../功能/消息过滤.ts';
 
 const parseParts = (message, streaming) => splitSceneDialogue(narrativeOnly(message), '', streaming);
+
+assert.equal(isPortraitPresent('图书馆', '图书馆'), true);
+assert.equal(isPortraitPresent('图书馆', '湖岸边'), false);
+assert.equal(isPortraitPresent('未知', '未知'), false);
+assert.equal(isPortraitPresent('图书馆', undefined), false);
+assert.equal(isPortraitPresent('', '图书馆'), false);
 
 const chat = [
   { mes: '[甲.neutral]\n很久之前。' },

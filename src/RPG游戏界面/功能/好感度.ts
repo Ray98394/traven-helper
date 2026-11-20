@@ -1,3 +1,5 @@
+import { syncAffectionStage } from '../../变量结构/好感阶段';
+
 export type Affection = {
   好感度: number;
   是否恋人: boolean;
@@ -26,6 +28,7 @@ export function writeAffection(raw: RawCharacter, data: Affection): void {
     if (Array.isArray(before)) before[0] = stored;
     else raw[key] = stored;
   }
+  syncAffectionStage(raw);
 }
 
 export function protectAffection(next: RawCharacter, previous: RawCharacter): void {

@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "游戏时间": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "天数": {
+          "default": 1,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "年": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9999
+        },
+        "月": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "日": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 31
+        }
+      }
+    },
+    "玩家": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "具体地点": {
+          "default": "玩家的家",
+          "type": "string"
+        },
+        "行动点": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "当前": {
+              "default": 4,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "上限": {
+              "default": 4,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "战斗队伍": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "攻略角色": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "description": "角色名"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "是否认识": {
+            "type": "boolean"
+          },
+          "好感度": {
+            "type": "number"
+          },
+          "是否恋人": {
+            "type": "boolean"
+          },
+          "表白已触发": {
+            "type": "boolean"
+          },
+          "拒绝后固定": {
+            "type": "boolean"
+          },
+          "具体地点": {
+            "default": "未知",
+            "type": "string"
+          }
+        },
+        "required": [
+          "好感度",
+          "是否恋人",
+          "表白已触发",
+          "拒绝后固定"
+        ]
+      }
+    },
+    "委托": {
+      "default": {},
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "description": "委托 ID"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "状态": {
+            "default": "进行中",
+            "type": "string",
+            "enum": [
+              "进行中",
+              "可提交",
+              "已完成",
+              "已过期"
+            ]
+          },
+          "进度": {
+            "default": 0,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "目标进度": {
+            "default": 1,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "攻略角色"
+  ]
+}

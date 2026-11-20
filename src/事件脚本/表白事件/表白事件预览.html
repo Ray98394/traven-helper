@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>表白事件预览</title><style>
+*{box-sizing:border-box}body{margin:0;background:#0c1421;color:#f7f2e9;font:16px/1.8 system-ui,sans-serif}
+.tools{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 18px;background:#18273c}button,select,input{font:inherit}button,select{padding:6px 12px;cursor:pointer}
+.scene{position:relative;width:100%;height:min(75vh,720px);min-height:360px;background:#101827 center/contain no-repeat;overflow:hidden}
+.card{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:min(90%,1400px);height:clamp(120px,22vh,190px);overflow-y:auto;padding:12px 16px 38px;border:1px solid #b8a77f99;border-radius:5px;background:rgba(8,19,34,.75)}
+.card small{color:#ebd7a8;font-size:14px;font-weight:600}.dialogue{display:block;width:100%;min-height:65px;padding:0;border:0;background:transparent;color:inherit;text-align:left;line-height:1.65;cursor:pointer}.hint{position:absolute;right:16px;bottom:10px;color:#d6bf90;font-size:.8em;text-align:right}.choices{text-align:right;margin:12px 0 10px}.choices button{margin-left:8px}.note{padding:0 18px;color:#bfccdc;font-size:.9em}
+.scene{transition:opacity .4s ease}.scene.fade{opacity:0;pointer-events:none}
+</style></head><body>
+<div class="tools"><label>角色 <select id="role"></select></label><label>选择背景插画 <input id="image" type="file" accept="image/png,image/jpeg,image/webp"></label><button id="restart">重新播放</button></div>
+<main class="scene" id="scene"><section class="card" aria-live="polite"><small id="title"></small><div id="content"></div></section></main>
+<p class="note">离线预览：选择角色后点击文本窗口推进。选择插画只影响本次预览，不会修改酒馆文件或变量。</p>
+<script>
+const scripts = {"蕾拉妮":[{"说话人":"","内容":"约定的地方一如往常。蕾拉妮已经到了，听见脚步声后，她转过身，像是终于松了一口气。"},{"说话人":"蕾拉妮","内容":"“你来了。我还在想，你会不会有什么事，没办法赴约。”"},{"说话人":"","内容":"她说得若无其事，手指却轻轻捏着衣角。察觉到这一点后，她又若无其事地松开了手。"},{"说话人":"蕾拉妮","内容":"“……不要那样看着我。只是想和你单独说几句话而已，又不是什么值得紧张的事。”"},{"说话人":"","内容":"话音刚落，她自己先安静下来。片刻后，她低低地笑了一声，像是终于承认这句辩解连自己也骗不过。"},{"说话人":"蕾拉妮","内容":"“好吧，我承认。我从刚才开始就在想，见到你以后，第一句话该说什么。”"},{"说话人":"蕾拉妮","内容":"“明明以前有那么多话，只要见到你就会忍不住说出来。可真的到了今天，准备好的那些……反而一句也想不起来了。”"},{"说话人":"","内容":"她垂下眼，指尖又一次收紧。等再抬起头时，她没有躲开视线，耳尖却悄悄泛起了红。"},{"说话人":"蕾拉妮","内容":"“和你在一起的时候，我总觉得时间过得太快。分别以后，又会想起你说过的话，想知道下一次见面是什么时候。”"},{"说话人":"蕾拉妮","内容":"“我试着告诉自己，这只是因为我们认识得太久了。可是后来我发现，我想要的，好像已经不只是像从前那样陪在你身边。”"},{"说话人":"","内容":"她向前走近半步，又停下来，留出足够的距离。那份一贯从容的神情下，藏着她认真等待答案的忐忑。"},{"说话人":"蕾拉妮","内容":"“我喜欢你。不是随口说说，也不是因为一时冲动……我想了很久，才终于决定亲口告诉你。”"},{"说话人":"蕾拉妮","内容":"“所以，你愿意和我成为恋人吗？”"}],"艾琳":[{"说话人":"艾琳","内容":"“我一直以为自己能把心事藏好，可是每次见到你，我都想再多陪你一会儿。我喜欢你，你愿意和我在一起吗？”"}]};
+const endings = {"蕾拉妮":{"接受":[{"说话人":"","内容":"蕾拉妮怔了一下，像是没想到自己这么快就得到了回答。"},{"说话人":"蕾拉妮","内容":"“……你答应了？”"},{"说话人":"","内容":"她看着你，确认自己没有听错。原本紧绷的肩膀渐渐放松，唇角也忍不住扬了起来。"},{"说话人":"蕾拉妮","内容":"“那就说好了。从今天开始，你可不能再假装不知道我的心意。”"},{"说话人":"","内容":"她伸出手，在半空中停了一瞬，随后有些不自在地移开视线。"},{"说话人":"蕾拉妮","内容":"“要一起走走吗？”"}],"婉拒":[{"说话人":"","内容":"蕾拉妮安静地听完，没有立刻开口。"},{"说话人":"","内容":"过了一会儿，她轻轻点头，努力露出和平时一样的笑容。"},{"说话人":"蕾拉妮","内容":"“我明白了。谢谢你认真回答我。”"},{"说话人":"","内容":"她垂下眼，给自己留了片刻整理心情，随后重新望向你。"},{"说话人":"蕾拉妮","内容":"“我可能需要一点时间……不过，你不用现在就给我别的答案。”"}]},"艾琳":{"接受":[{"说话人":"","内容":"艾琳怔了片刻，随后轻轻笑了起来。"},{"说话人":"艾琳","内容":"“谢谢你。我很高兴，今后也请多关照。”"}],"婉拒":[{"说话人":"","内容":"艾琳沉默片刻，轻轻点了点头。"},{"说话人":"艾琳","内容":"“我明白了。谢谢你愿意认真听我说。”"}]}};
+const role = document.getElementById('role'), scene = document.getElementById('scene'), content = document.getElementById('content'), title = document.getElementById('title');
+let step = 0, imageUrl = '', animation = 0, choice = null;
+for (const name of Object.keys(scripts)) { const option = document.createElement('option'); option.value = name; option.textContent = name; role.append(option); }
+function render() {
+  cancelAnimationFrame(animation);
+  const lines = choice === null ? scripts[role.value] : endings[role.value]?.[choice]; const line = lines?.[step]; title.textContent = line?.说话人 ?? ''; content.replaceChildren();
+  if (!line) { content.textContent = '该角色尚未配置表白剧情。'; return; }
+  const text = document.createElement('button'); text.className = 'dialogue'; text.type = 'button'; text.setAttribute('aria-label', '推进表白剧情');
+  const words = document.createElement('span'), hint = document.createElement('span'); hint.className = 'hint'; hint.textContent = '点击显示全文'; text.append(words, hint); content.append(text);
+  const chars = Array.from(line.内容); let finished = false; const started = performance.now();
+  function finish() {
+    if (finished) return; finished = true; cancelAnimationFrame(animation); words.textContent = line.内容;
+    hint.textContent = step < lines.length - 1 ? '点击窗口继续 ▾' : choice === null ? '请选择你的回答' : '表白事件结束，点击继续';
+    if (step < lines.length - 1) return;
+    const choices = document.createElement('div'); choices.className = 'choices';
+    if (choice === null) {
+      for (const [label, value] of [['接受心意', '接受'], ['婉拒', '婉拒']]) { const button = document.createElement('button'); button.textContent = label; button.onclick = () => { choice = value; step = 0; render(); }; choices.append(button); }
+    } else {
+      const button = document.createElement('button'); button.textContent = '继续'; button.onclick = () => { scene.classList.add('fade'); setTimeout(() => { content.replaceChildren(); title.textContent = ''; const result = document.createElement('p'); result.textContent = '预览结束（未写入变量）'; content.append(result); scene.classList.remove('fade'); }, 400); }; choices.append(button);
+    }
+    content.append(choices);
+  }
+  text.addEventListener('click', () => { if (!finished) finish(); else if (step < lines.length - 1) { step++; render(); } });
+  function tick(now) { const count = Math.min(chars.length, Math.floor((now - started) / 40)); words.textContent = chars.slice(0, count).join(''); if (count >= chars.length) finish(); else animation = requestAnimationFrame(tick); }
+  animation = requestAnimationFrame(tick);
+}
+role.onchange = () => { step = 0; choice = null; render(); }; document.getElementById('restart').onclick = () => { step = 0; choice = null; render(); };
+document.getElementById('image').onchange = event => { if (imageUrl) URL.revokeObjectURL(imageUrl); const file = event.target.files[0]; imageUrl = file ? URL.createObjectURL(file) : ''; scene.style.backgroundImage = imageUrl ? 'url(' + JSON.stringify(imageUrl) + ')' : 'none'; };
+render();
+</script></body></html>

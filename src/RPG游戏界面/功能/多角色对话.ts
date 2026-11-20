@@ -16,3 +16,29 @@ export function splitSceneDialogue(text: string, fallbackName: string, streaming
   });
   return result;
 }
+
+/** 显示层将角色标记中的叙述与引号内台词分开；原始标记仍用于立绘。 */
+export function splitDialogueForDisplay(parts: ScenePart[]): ScenePart[] {
+  return parts.flatMap(part => {
+    if (!part.tagged || part.name === '旁白') return [part];
+    const quotes = /“[^”]*”|「[^」]*」|『[^』]*』|"[^"\n]*"/g;
+    const matches = [...part.text.matchAll(quotes)];
+    if (!matches.length) {
+      // 旧消息可能不带引号，短句继续按角色台词处理。
+      return part.text.length >= 55 || /\n\s*\n/.test(part.text)
+        ? [{ name: '旁白', text: part.text, tagged: true }]
+        : [part];
+    }
+    const result: ScenePart[] = [];
+    let offset = 0;
+    for (const match of matches) {
+      const narrative = part.text.slice(offset, match.index).trim();
+      if (narrative) result.push({ name: '旁白', text: narrative, tagged: true });
+      result.push({ ...part, text: match[0] });
+      offset = match.index! + match[0].length;
+    }
+    const tail = part.text.slice(offset).trim();
+    if (tail) result.push({ name: '旁白', text: tail, tagged: true });
+    return result;
+  });
+}

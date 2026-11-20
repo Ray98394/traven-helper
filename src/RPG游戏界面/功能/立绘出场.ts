@@ -2,6 +2,13 @@ type ChatMessage = { mes: string; is_user?: boolean; is_system?: boolean };
 type ScenePart = { name: string; expression?: string; tagged: boolean };
 export type PortraitAppearance = { current: boolean; expression: string };
 
+/** 只有玩家和角色的具体地点都确定且相同时才显示。 */
+export function isPortraitPresent(playerLocation: string, roleLocation: string | undefined): boolean {
+  const player = playerLocation.trim();
+  const role = roleLocation?.trim();
+  return Boolean(player && player !== '未知' && role && role !== '未知' && role === player);
+}
+
 /** 按完整模型回复统计出场角色；流式消息替代正在生成的楼层。 */
 export function recentPortraitAppearances(
   messages: ChatMessage[],
