@@ -1,31 +1,22 @@
 ---
 变量输出格式:
   rule:
-    - you must output the update analysis and the actual update commands at once in the end of the next reply
-    - the update commands works like the **JSON Patch (RFC 6902)** standard, must be a valid JSON array containing operation objects, but supports the following operations instead:
-      - replace: replace the value of existing paths
-      - delta: update the value of existing number paths by a delta value
-      - insert: insert new items into an object or array (using `-` as array index intends appending to the end)
-      - remove
-      - move
-    - don't update field names starts with `_` as they are readonly, such as `_变量`
+    - 在正文末尾输出一次 UpdateVariable，依据本轮剧情和变量更新规则判断变化。
+    - JSONPatch 必须是合法 JSON 数组；无变化时输出空数组 []。
+    - 仅修改规则允许的已有变量；数字使用 JSON 数字，known 使用 JSON 布尔值。不得修改以 _ 开头的字段。
+    - 支持 replace、delta、insert、remove、move；delta 的 value 是数字增减量，insert 的数组路径以 /- 结尾表示追加。
   format: |-
     <UpdateVariable>
-    <Analysis>$(IN ENGLISH, no more than 80 words)
-    - ${calculate time passed: ...}
-    - ${decide whether dramatic updates are allowed as it's in a special case or the time passed is more than usual: yes/no}
-    - ${analyze every variable based on its corresponding `check`, according only to current reply instead of previous plots: ...}
-    </Analysis>
+    <Analysis>简要说明本轮哪些变量需要变化及原因；没有变化则说明无变化。</Analysis>
     <JSONPatch>
-    [
-      { "op": "replace", "path": "${/path/to/variable}", "value": "${new_value}" },
-      { "op": "delta", "path": "${/path/to/number/variable}", "value": "${positive_or_negative_delta}" },
-      { "op": "insert", "path": "${/path/to/object/new_key}", "value": "${new_value}" },
-      { "op": "insert", "path": "${/path/to/array/-}", "value": "${new_value}" },
-      { "op": "remove", "path": "${/path/to/object/key}" },
-      { "op": "remove", "path": "${/path/to/array/0}" },
-      { "op": "move", "from": "${/path/to/variable}", "to": "${/path/to/another/path}" },
-      ...
-    ]
+    ${合法 JSON 数组，只包含本轮需要执行的更新；无变化时为 []}
+    </JSONPatch>
+    </UpdateVariable>
+  example: |-
+    以下仅为格式示例，不代表本轮必须更新：
+    <UpdateVariable>
+    <Analysis>本轮没有需要更新的变量。</Analysis>
+    <JSONPatch>
+    []
     </JSONPatch>
     </UpdateVariable>

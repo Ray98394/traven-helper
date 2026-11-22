@@ -1,29 +1,22 @@
-<%_
+<%_ {
 // MVU 状态保存在消息变量中；模板变量缓存合并了当前聊天各楼层的变量。
 const stat = getvar('stat_data', { defaults: {} });
 const unwrap = value => Array.isArray(value) ? value[0] : value;
 const readText = value => typeof unwrap(value) === 'string' ? unwrap(value).trim() : '';
-const location = readText(stat?.玩家?.具体地点);
-const roles = stat?.攻略角色;
+const location = readText(stat?.player?.area?.place);
+const roles = stat?.characters;
+const places = stat?.locations;
 const valid = location && location !== '未知' && roles && typeof roles === 'object' && !Array.isArray(roles);
-const present = [];
-const elsewhere = {};
-const unknown = [];
-if (valid) {
-  for (const [name, role] of Object.entries(roles)) {
-    const place = readText(role?.具体地点);
-    if (!place || place === '未知') unknown.push(name);
-    else if (place === location) present.push(name);
-    else elsewhere[name] = place;
-  }
-}
+const entry = valid && places && typeof places === 'object' && !Array.isArray(places) ? places[location] : undefined;
+const present = Array.isArray(entry?.present) ? [...new Set(entry.present.filter(name => typeof name === 'string' && name.trim()))] : [];
 _%>
 <current_scene>
 <%_ if (valid) { _%>
-The live location below overrides earlier settings and speakers. If the player changed location, continue at the current location, not the old scene. Only characters in present may act or speak here in person. Characters in elsewhere may be mentioned, but cannot appear here without a location change; remote communication requires an established means. Do not assume characters in unknown are present. Background NPCs are allowed. Do not force present characters to speak or decide the player's actions.
+The live location below overrides earlier settings and speakers. If the player changed location, continue at the current location, not the old scene. Only configured characters in present may act or speak here in person; absent characters may be mentioned but cannot appear without a location change. Remote communication requires an established means. Background NPCs are allowed. Do not force present characters to speak or decide the player's actions.
 Unrecognized characters may be named in narration or by others. Use their real names in speaker tags; the interface hides their names until the player learns their identity through an introduction.
-<%- JSON.stringify({ location, present, elsewhere, unknown }) %>
+<%- JSON.stringify({ location, present }) %>
 <%_ } else { _%>
 Current location or character data is unavailable. Do not infer physical presence from old dialogue; ask for or establish the current situation.
 <%_ } _%>
 </current_scene>
+<%_ } _%>

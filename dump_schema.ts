@@ -3,17 +3,16 @@
 import _ from 'lodash';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import z from 'zod';
 
-fs.globSync('src/**/schema.ts').forEach(async schema_file => {
+for (const schema_file of fs.globSync('src/**/schema.ts')) {
   try {
     globalThis._ = _;
     globalThis.z = z;
-    const module = await import(
-      (process.platform === 'win32' ? 'file://' : '') + path.resolve(import.meta.dirname, schema_file)
-    );
+    const module = await import(pathToFileURL(path.resolve(import.meta.dirname, schema_file)).href);
     if (_.has(module, 'Schema')) {
-      const schema = _.get(module, 'Schema');
+      let schema = _.get(module, 'Schema');
       if (_.isFunction(schema)) {
         schema = schema();
       }
@@ -24,5 +23,6 @@ fs.globSync('src/**/schema.ts').forEach(async schema_file => {
     }
   } catch (e) {
     console.error(`生成 '${schema_file}' 对应的 schema.json 失败: ${e}`);
+    process.exitCode = 1;
   }
-});
+}

@@ -17,3 +17,11 @@ export function narrativeOnly(text: string): string {
   }
   return result.trimEnd();
 }
+
+/** 读取模型返回的思考文本；变量更新块内的 Analysis 不属于剧情思考。 */
+export function reasoningForDisplay(text: string, nativeReasoning?: unknown): string {
+  const withoutUpdates = text.replace(/<(UpdateVariable|Update|JSONPatch)(?:\s[^>]*)?>[\s\S]*?(?:<\/\1\s*>|$)/gi, '');
+  const tagged = Array.from(withoutUpdates.matchAll(/<(think|thinking|reasoning|analysis)(?:\s[^>]*)?>([\s\S]*?)(?:<\/\1\s*>|$)/gi), match => match[2].trim()).filter(Boolean);
+  const native = typeof nativeReasoning === 'string' ? nativeReasoning.trim() : '';
+  return [...new Set([native, ...tagged].filter(Boolean))].join('\n\n');
+}

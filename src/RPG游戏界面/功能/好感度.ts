@@ -1,10 +1,9 @@
-import { syncAffectionStage } from '../../变量结构/好感阶段';
+import { affectionStages, getAffectionStage, syncAffectionStage, type AffectionStage } from '../../变量结构/好感阶段';
 
 export type Affection = {
-  好感度: number;
-  是否恋人: boolean;
-  表白已触发: boolean;
-  拒绝后固定: boolean;
+  affection: number;
+  stage: AffectionStage;
+  confessed: boolean;
 };
 
 type RawCharacter = Record<string, unknown>;
@@ -12,12 +11,11 @@ const value = (v: unknown) => (Array.isArray(v) ? v[0] : v);
 const flag = (v: unknown) => value(v) === true || value(v) === 1;
 
 export function readAffection(raw: RawCharacter): Affection {
-  const n = Number(value(raw.好感度));
+  const n = Number(value(raw.affection));
   return {
-    好感度: Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 45,
-    是否恋人: flag(raw.是否恋人),
-    表白已触发: flag(raw.表白已触发),
-    拒绝后固定: flag(raw.拒绝后固定),
+    affection: Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 45,
+    stage: affectionStages.includes(value(raw.stage) as AffectionStage) ? value(raw.stage) as AffectionStage : getAffectionStage(raw.affection, raw.known),
+    confessed: flag(raw.confessed),
   };
 }
 
@@ -35,9 +33,8 @@ export function protectAffection(next: RawCharacter, previous: RawCharacter): vo
   const old = readAffection(previous);
   const proposed = readAffection(next);
   writeAffection(next, {
-    好感度: old.拒绝后固定 ? 99 : old.好感度 === 100 ? 100 : proposed.好感度,
-    是否恋人: old.是否恋人,
-    表白已触发: old.表白已触发,
-    拒绝后固定: old.拒绝后固定,
+    affection: old.stage === '被拒绝' ? 99 : old.affection === 100 ? 100 : proposed.affection,
+    stage: old.stage,
+    confessed: old.confessed,
   });
 }

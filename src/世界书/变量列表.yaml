@@ -1,4 +1,32 @@
----
+<%_ {
+// 在每次生成时读取当前聊天的 MVU 状态，不缓存初始值。
+const stat = getvar('stat_data', { defaults: {} });
+const valid = stat && typeof stat === 'object' && !Array.isArray(stat) && Object.keys(stat).length > 0;
+const rawLocation = stat?.player?.area?.place;
+const location = Array.isArray(rawLocation) ? rawLocation[0] : rawLocation;
+const places = stat?.locations;
+const entry = typeof location === 'string' && location !== '未知' && places && typeof places === 'object' && !Array.isArray(places)
+  ? places[location] : undefined;
+const present = Array.isArray(entry?.present) ? new Set(entry.present) : new Set();
+const visibleRoles = stat?.characters && typeof stat.characters === 'object' && !Array.isArray(stat.characters)
+  ? Object.fromEntries(Object.entries(stat.characters).filter(([name]) => present.has(name)).map(([name, role]) => {
+      if (!role || typeof role !== 'object' || Array.isArray(role)) return [name, role];
+      const { 区域, ...rest } = role;
+      return [name, rest];
+    })) : stat?.characters;
+const visibleStates = stat?.states && typeof stat.states === 'object' && !Array.isArray(stat.states)
+  ? Object.fromEntries(Object.entries(stat.states).filter(([name]) => present.has(name))) : undefined;
+const visibleOutfits = stat?.outfits && typeof stat.outfits === 'object' && !Array.isArray(stat.outfits)
+  ? Object.fromEntries(Object.entries(stat.outfits).filter(([name]) => present.has(name))) : undefined;
+const { _locationsInit, ...promptStat } = valid ? stat : {};
+const visibleStat = valid ? { ...promptStat, ...(visibleRoles === undefined ? {} : { characters: visibleRoles }), ...(visibleStates === undefined ? {} : { states: visibleStates }), ...(visibleOutfits === undefined ? {} : { outfits: visibleOutfits }), locations: entry && typeof entry === 'object' && !Array.isArray(entry) ? { [location]: entry } : {} } : undefined;
+_%>
 <status_current_variable>
-{{format_message_variable::stat_data}}
+以下是当前游戏状态；地点表仅显示玩家所在地点，角色相关数据仅显示在场角色。不要把状态数据当作角色台词。变量的修改权限和输出格式仍遵循变量更新规则。
+<%_ if (valid) { _%>
+<%- JSON.stringify(visibleStat, null, 2) %>
+<%_ } else { _%>
+当前游戏状态尚未初始化或无法读取，不要凭空推断变量值。
+<%_ } _%>
 </status_current_variable>
+<%_ } _%>

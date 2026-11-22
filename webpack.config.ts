@@ -234,6 +234,11 @@ function parse_configuration(entry: Entry): (_env: any, argv: any) => webpack.Co
         {
           oneOf: [
             {
+              test: /\.(png|jpe?g|webp|gif)$/i,
+              include: path.join(import.meta.dirname, 'src', '美术'),
+              type: 'asset/inline',
+            },
+            {
               test: /\.tsx?$/,
               loader: 'ts-loader',
               options: {
@@ -410,6 +415,7 @@ function parse_configuration(entry: Entry): (_env: any, argv: any) => webpack.Co
     },
     resolve: {
       extensions: ['.ts', '.js', '.tsx', '.jsx', '.css'],
+      extensionAlias: { '.js': ['.js', '.ts'] },
       plugins: [
         new TsconfigPathsPlugin({
           extensions: ['.ts', '.js', '.tsx', '.jsx'],

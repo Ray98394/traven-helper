@@ -1,28 +1,30 @@
-游戏时间:
-  天数: 1
-  年: 1830
-  月: 9
-  日: 5
-玩家:
-  具体地点: 玩家的家
-  行动点:
-    当前: 4
-    上限: 4
-  战斗队伍: []
-攻略角色:
+time:
+  day: 1
+  year: 1830
+  month: 9
+  date: 5
+player:
+  area:
+    region: 城镇
+    place: 玩家的家
+  energy:
+    current: 4
+    max: 4
+  party: []
+locations: {}
+characters:
   蕾拉妮:
-    是否认识: true
-    具体地点: 湖岸边
-    好感度: 45
-    好感度阶段: 亲近
-    是否恋人: false
-    表白已触发: false
-    拒绝后固定: false
+    known: true
+    affection: 45
+    stage: 亲近
+    confessed: false
   艾琳:
-    是否认识: false
-    具体地点: 图书馆
-    好感度: 0
-    好感度阶段: 陌生
-    是否恋人: false
-    表白已触发: false
-    拒绝后固定: false
+    known: false
+    affection: 0
+    stage: 陌生
+    confessed: false
+  爱丽丝:
+    known: false
+    affection: 0
+    stage: 陌生
+    confessed: false

@@ -8,16 +8,25 @@ for (const [score, expected] of [[0, '有所保留'], [19, '有所保留'], [20,
   assert.equal(getAffectionStage(score, true), expected);
 }
 assert.equal(getAffectionStage(100, false), '陌生');
-const role = { 是否认识: [false, '说明'], 好感度: [65, '说明'], 好感度阶段: ['亲近', '说明'], 是否恋人: false, 表白已触发: false, 拒绝后固定: false };
+const role = { known: [false, '说明'], affection: [65, '说明'], stage: ['亲近', '说明'], confessed: false };
 assert.equal(syncAffectionStage(role), true);
-assert.deepEqual(role.好感度阶段, ['陌生', '说明']);
-role.是否认识[0] = true;
+assert.deepEqual(role.stage, ['陌生', '说明']);
+role.known[0] = true;
 assert.equal(syncAffectionStage(role), true);
-assert.deepEqual(role.好感度阶段, ['特别在意', '说明']);
+assert.deepEqual(role.stage, ['特别在意', '说明']);
 const state = readAffection(role);
-state.好感度 = 40;
+state.affection = 40;
 writeAffection(role, state);
-assert.equal(role.好感度阶段[0], '亲近');
-const next = { ...role, 好感度: [80, '说明'], 好感度阶段: ['错误', '说明'] };
+assert.equal(role.stage[0], '亲近');
+const next = { ...role, affection: [80, '说明'], stage: ['错误', '说明'] };
 protectAffection(next, role);
-assert.equal(next.好感度阶段[0], '明确心意');
+assert.equal(next.stage[0], '明确心意');
+for (const [stage, score] of [['恋人', 100], ['被拒绝', 99]]) {
+  const previous = { known: true, affection: score, stage: stage, confessed: true };
+  const proposed = { ...previous, affection: 10, stage: '陌生', confessed: false };
+  protectAffection(proposed, previous);
+  assert.equal(proposed.stage, stage);
+  assert.equal(proposed.affection, score);
+  assert.equal(proposed.confessed, true);
+  assert.equal(syncAffectionStage(proposed), false);
+}

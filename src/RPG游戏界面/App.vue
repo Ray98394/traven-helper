@@ -5,22 +5,29 @@ import { gsap } from 'gsap';
 import { parse as parseYaml } from 'yaml';
 import { protectAffection, readAffection, writeAffection, type Affection } from './功能/好感度';
 import { Schema as AffectionSchema } from '../变量结构/schema';
-import { narrativeOnly } from './功能/消息过滤';
+import { narrativeOnly, reasoningForDisplay } from './功能/消息过滤';
 import { splitDialogueForDisplay, splitSceneDialogue } from './功能/多角色对话';
-import { parseRoleSchedules, parseSceneRoster } from './功能/世界书角色列表';
+import { appearancePrompt, composeCharacterRoster, parseRoleSchedules, parseSceneRoster, selectOutfit, syncCharacterStates, type RosterRole } from './功能/世界书角色列表';
 import defaultRoster from '../世界书/角色列表.yaml?raw';
+import defaultLeilani from '../世界书/蕾拉妮角色详情.yaml?raw';
+import defaultErin from '../世界书/艾琳角色详情.yaml?raw';
+import defaultAlice from '../世界书/爱丽丝角色详情.yaml?raw';
 import defaultInitial from '../世界书/[initvar]变量初始化勿开.yaml?raw';
 import { isPortraitPresent, recentPortraitAppearances } from './功能/立绘出场';
 import { canConfess } from './功能/表白地点';
 import { confessionScripts, endings } from '../事件脚本/表白事件';
 import StatusSidebar from './状态侧栏.vue';
-import { addDays, advanceDay, formatDate, parseDate, START_DATE } from './功能/每日重置';
+import { advanceDay, formatDate, parseDate, START_DATE } from './功能/每日重置';
 import { travelTo } from './功能/地点移动';
 import { arrivalPrompt, buildArrivalScene, currentScenePrompt } from './功能/地点出场';
 import { displaySpeaker, knowsRole, readKnowledge, type Knowledge } from './功能/角色认识';
 import { fillInitialRoleLocations } from './功能/初始角色地点';
+import { characterLocations } from './功能/地点成员';
 import { readCurrentStat } from './功能/读取当前状态';
 import { getAffectionStage, syncAffectionStage } from '../变量结构/好感阶段';
+import { artwork, loadArtwork } from './功能/本地素材';
+import { backgroundForLocation, expressionsForOutfit, portraitForExpression } from './功能/素材索引';
+import { archiveLocation, prepareMemoryPrompt, filterArchivedPrompt, initializeMemory } from './功能/场景记忆运行';
 
 type Character = { name: string; avatar: string; talkativeness?: number | string };
 type Context = {
@@ -32,18 +39,17 @@ type Context = {
   }[];
   groupId?: string;
   characterId?: number;
-  chat: { name: string; mes: string; is_system?: boolean; original_avatar?: string; is_user?: boolean }[];
+  chat: { name: string; mes: string; is_system?: boolean; original_avatar?: string; is_user?: boolean; extra?: { reasoning?: string } }[];
   streamingProcessor?: { messageId?: number };
   eventSource: {
     on(event: string, handler: (...args: any[]) => void): void;
     removeListener(event: string, handler: (...args: any[]) => void): void;
   };
   eventTypes: Record<string, string>;
-  extensionSettings: { expressionOverrides?: { name: string; path: string }[] };
   onlineStatus?: string;
 };
 type Sprite = { avatar: string; name: string; src: string; current?: boolean };
-type SceneConfig = { roles: Record<string, { folder: string; fallback: string; confessionLocation?: string }>; rosterFromWorldbook?: boolean };
+type SceneConfig = { roles: Record<string, RosterRole>; rosterFromWorldbook?: boolean };
 const Position = z.object({
   x: z.number().min(0).max(100),
   y: z.number().min(0).max(120),
@@ -52,9 +58,9 @@ const Position = z.object({
 const Settings = z
   .object({
     positions: z.record(z.string(), Position).default({}),
-    idleOpacity: z.number().min(0).max(100).default(40),
+    idleOpacity: z.number().min(0).max(100).default(90),
     chatOpacity: z.number().min(0).max(100).default(90),
-    fontSize: z.number().min(10).max(32).default(14),
+    fontSize: z.number().min(10).max(32).default(17),
   })
   .prefault({});
 type Position = z.infer<typeof Position>;
@@ -67,20 +73,33 @@ const host = window.parent as Window & {
 const doc = host.document;
 const context = () => host.SillyTavern.getContext();
 const affectionEntries = ref<Record<string, Affection>>({});
-const initialKnowledge = ref<Knowledge>(readKnowledge(parseYaml(defaultInitial)?.攻略角色));
+const initialKnowledge = ref<Knowledge>(readKnowledge(parseYaml(defaultInitial)?.characters));
 const roleKnowledge = ref<Knowledge>({});
 const playerLocation = ref('未知');
+const playerRegion = ref('未知');
 const roleLocations = ref<Record<string, string>>({});
+const outfitOverrides = ref<Record<string, string>>({});
+const characterStates = ref<Record<string, { 'state': string; source: '自动' | '事件' }>>({});
+const characterAffectionStages = ref<Record<string, string>>({});
+async function readCharacterRoster(): Promise<string> {
+  const book = getCharWorldbookNames('current').primary;
+  if (!book) return composeCharacterRoster(defaultRoster, { 蕾拉妮角色详情: defaultLeilani, 艾琳角色详情: defaultErin, 爱丽丝角色详情: defaultAlice });
+  const entries = await getWorldbook(book);
+  const index = entries.find(entry => entry.name === '角色索引' && entry.enabled);
+  if (!index) throw new Error(`世界书 ${book} 中没有启用的角色索引`);
+  return composeCharacterRoster(index.content, Object.fromEntries(entries.filter(entry => entry.enabled).map(entry => [entry.name, entry.content])));
+}
 const sidebarDay = ref<number | null>(null);
 const sidebarDate = ref('日期未初始化');
 const sidebarUserName = ref('玩家');
 const resting = ref(false);
 const traveling = ref(false);
+const memoryLoading = ref(false);
 const pendingArrival = ref<{ location: string; chatId: string } | null>(null);
 const diaryOpen = ref(false);
 const sidebarActionPoints = ref('—');
 const sidebarCharacters = computed(() => Object.entries(affectionEntries.value).map(([name, role]) => ({
-  name, affection: role.好感度, stage: getAffectionStage(role.好感度, roleKnowledge.value[name]), location: roleLocations.value[name] ?? '未知',
+  name, affection: role.affection, stage: getAffectionStage(role.affection, roleKnowledge.value[name], role.stage), location: roleLocations.value[name] ?? '未知',
 })));
 async function initializeMissingDailyVariables(): Promise<boolean> {
   const messageId = getLastMessageId();
@@ -91,20 +110,20 @@ async function initializeMissingDailyVariables(): Promise<boolean> {
     const names = _.uniq([getChatWorldbookName('current'), bound.primary, ...bound.additional, ...getGlobalWorldbookNames()].filter((name): name is string => !!name));
     const entries = (await Promise.all(names.map(name => getWorldbook(name)))).flat();
     const initEntries = entries.filter(entry => entry.name.toLowerCase().includes('[initvar]'));
-    let configuredRoles: unknown = parseYaml(defaultInitial)?.攻略角色;
+    let configuredRoles: unknown = parseYaml(defaultInitial)?.characters;
     if (initEntries.length === 1) {
-      try { configuredRoles = parseYaml(initEntries[0].content)?.攻略角色 ?? configuredRoles; } catch { /* 使用项目配置 */ }
+      try { configuredRoles = parseYaml(initEntries[0].content)?.characters ?? configuredRoles; } catch { /* 使用项目配置 */ }
     }
     const configuredKnowledge = readKnowledge(configuredRoles);
-    initialKnowledge.value = { ...readKnowledge(parseYaml(defaultInitial)?.攻略角色), ...configuredKnowledge };
+    initialKnowledge.value = { ...readKnowledge(parseYaml(defaultInitial)?.characters), ...configuredKnowledge };
     const candidates = entries.filter(entry => entry.name.toLowerCase().includes('[initvar]')).flatMap(entry => {
       try {
         const init = parseYaml(entry.content);
-        const day = init?.游戏时间?.天数;
-        const current = init?.玩家?.行动点?.当前;
-        const maximum = init?.玩家?.行动点?.上限;
+        const day = init?.time?.day;
+        const current = init?.player?.energy?.current;
+        const maximum = init?.player?.energy?.max;
         if (![day, current, maximum].every(value => Number.isSafeInteger(value) && value >= 0) || day < 1 || current > maximum) return [];
-        const date = parseDate(init?.游戏时间) ?? START_DATE;
+        const date = parseDate(init?.time) ?? START_DATE;
         return [{ day, current, maximum, date }];
       } catch { return []; }
     });
@@ -112,44 +131,27 @@ async function initializeMissingDailyVariables(): Promise<boolean> {
     if (resting.value || traveling.value || affectionBusy.value || groupBusy.value || advancePending.value) return false;
     const data = _.cloneDeep(Mvu.getMvuData({ type: 'message', message_id: messageId }));
     const stat = data.stat_data;
-    if (!_.isPlainObject(stat) || !_.isPlainObject(stat.玩家) || !_.isPlainObject(stat.攻略角色)) return false;
-    if (_.isPlainObject(configuredRoles) && Object.keys(configuredRoles).length && !Object.keys(stat.攻略角色).length) return false;
+    if (!_.isPlainObject(stat) || !_.isPlainObject(stat.player) || !_.isPlainObject(stat.characters)) return false;
+    if (_.isPlainObject(configuredRoles) && Object.keys(configuredRoles).length && !Object.keys(stat.characters).length) return false;
     const initial = candidates[0] ?? { day: 1, current: 4, maximum: 4, date: START_DATE };
-    const values = [
-      ['游戏时间.天数', initial.day],
-      ['玩家.行动点.当前', initial.current],
-      ['玩家.行动点.上限', initial.maximum],
-    ] as const;
     let changed = false;
-    for (const [path, value] of values) {
-      if (!_.has(stat, path)) { _.set(stat, path, value); changed = true; }
-    }
-    if (_.isPlainObject(stat.攻略角色)) {
-      for (const [name, role] of Object.entries(stat.攻略角色)) {
-        if (_.isPlainObject(role) && !Object.hasOwn(role, '是否认识')) {
-          role.是否认识 = initialKnowledge.value[name] ?? false;
-          changed = true;
-        }
+    if (_.isPlainObject(stat.characters)) {
+      for (const role of Object.values(stat.characters)) {
         if (_.isPlainObject(role) && syncAffectionStage(role)) changed = true;
       }
     }
-    if (fillInitialRoleLocations(stat, configuredRoles, parseYaml(defaultInitial)?.攻略角色, initial.day)) changed = true;
-    const time = _.get(stat, '游戏时间');
-    const unwrap = (value: unknown) => Array.isArray(value) ? value[0] : value;
-    const day = unwrap(time?.天数);
-    // 旧存档只有累计天数；按起始日期推算，已有日期绝不覆盖。
-    if (time && ['年', '月', '日'].every(key => !Object.hasOwn(time, key)) && typeof day === 'number' && Number.isSafeInteger(day) && day >= 1) {
-      const migrated = addDays(initial.date, day - initial.day);
-      if (migrated) { Object.assign(time, migrated); changed = true; }
-    }
+    const rosterContent = await readCharacterRoster();
+    if (fillInitialRoleLocations(stat, parseRoleSchedules(rosterContent), initial.day)) changed = true;
+    const roster = parseSceneRoster(rosterContent);
+    if (syncCharacterStates(stat, roster, characterLocations(stat))) changed = true;
     if (chatId !== SillyTavern.getCurrentChatId() || messageId !== getLastMessageId()) return false;
     if (!changed) return true;
     await Mvu.replaceMvuData(data, { type: 'message', message_id: messageId });
     refreshAffection();
-    console.info('[RPG游戏界面] 已补充初始日期、行动点和角色状态中的缺失字段');
+    console.info('[RPG游戏界面] 已初始化角色地点与状态');
     return true;
   } catch (error) {
-    console.warn('[RPG游戏界面] 无法补充日期与行动点', error);
+    console.warn('[RPG游戏界面] 无法初始化角色地点与状态', error);
     return false;
   }
 }
@@ -157,11 +159,11 @@ function refreshSidebarValues(stat: unknown) {
   const name = substitudeMacros('{{user}}').trim();
   sidebarUserName.value = name && name !== '{{user}}' ? name : '玩家';
   const unwrap = (value: unknown) => Array.isArray(value) ? value[0] : value;
-  const day = unwrap(_.get(stat, '游戏时间.天数'));
-  const current = unwrap(_.get(stat, '玩家.行动点.当前'));
-  const maximum = unwrap(_.get(stat, '玩家.行动点.上限'));
+  const day = unwrap(_.get(stat, 'time.day'));
+  const current = unwrap(_.get(stat, 'player.energy.current'));
+  const maximum = unwrap(_.get(stat, 'player.energy.max'));
   sidebarDay.value = typeof day === 'number' && Number.isFinite(day) ? day : null;
-  const date = parseDate(_.get(stat, '游戏时间'));
+  const date = parseDate(_.get(stat, 'time'));
   sidebarDate.value = date ? formatDate(date) : '日期未初始化';
   sidebarActionPoints.value = typeof current === 'number' && typeof maximum === 'number'
     ? `${current} / ${maximum}` : '—';
@@ -176,21 +178,29 @@ async function restUntilTomorrow() {
     const messageId = getLastMessageId();
     const chatId = SillyTavern.getCurrentChatId();
     if (messageId < 0) throw new Error('当前没有可保存的聊天楼层');
-    let schedules = parseRoleSchedules(defaultRoster);
-    const book = getCharWorldbookNames('current').primary;
-    if (book) {
-      const entry = (await getWorldbook(book)).find(item => item.name === '角色列表' && item.enabled);
-      if (entry) schedules = { ...schedules, ...parseRoleSchedules(entry.content) };
-    }
+    const roster = await readCharacterRoster();
+    const schedules = parseRoleSchedules(roster);
     const data = _.cloneDeep(Mvu.getMvuData({ type: 'message', message_id: messageId }));
+    const previousStat = _.cloneDeep(data.stat_data);
     if (chatId !== SillyTavern.getCurrentChatId() || messageId !== getLastMessageId()) throw new Error('聊天或楼层已变化，请重试');
     if (!_.isPlainObject(data.stat_data) || !advanceDay(data.stat_data, schedules)) {
-      toastr.warning('当前聊天尚未初始化日期和行动点，请先初始化后再休息。');
+      toastr.warning('当前聊天尚未初始化日期和精力值，请先初始化后再休息。');
       return;
     }
+    syncCharacterStates(data.stat_data, parseSceneRoster(roster), characterLocations(data.stat_data));
     if (messageId !== getLastMessageId() || chatId !== SillyTavern.getCurrentChatId()) throw new Error('聊天或楼层已变化，请重试');
     await Mvu.replaceMvuData(data, { type: 'message', message_id: messageId });
     refreshAffection();
+    const previousPlace = _.get(previousStat, 'player.area.place');
+    const oldLocation = Array.isArray(previousPlace) ? previousPlace[0] : previousPlace;
+    const nextPlace = _.get(data.stat_data, 'player.area.place');
+    const newLocation = Array.isArray(nextPlace) ? nextPlace[0] : nextPlace;
+    if (typeof oldLocation === 'string' && oldLocation !== newLocation) {
+      const present = _.get(previousStat, ['locations', oldLocation, 'present']);
+      try { await archiveLocation(oldLocation, Array.isArray(present) ? present.filter((x: unknown): x is string => typeof x === 'string') : [], chatId, active => { memoryLoading.value = active; }); }
+      catch (error) { console.error('[RPG游戏界面] 场景记忆保存失败', error); toastr.warning('场景记忆保存失败，聊天原文仍然保留。'); }
+    }
+    if (chatId !== SillyTavern.getCurrentChatId()) return;
     pendingArrival.value = null;
     console.info('[RPG游戏界面] 已进入新的一天，玩家回到家中');
   } catch (error) {
@@ -211,17 +221,30 @@ async function travelToLocation(destination: string) {
     const chatId = SillyTavern.getCurrentChatId();
     if (messageId < 0) throw new Error('当前没有可保存的聊天楼层');
     const data = _.cloneDeep(Mvu.getMvuData({ type: 'message', message_id: messageId }));
+    const previousStat = _.cloneDeep(data.stat_data);
     const result = _.isPlainObject(data.stat_data) ? travelTo(data.stat_data, destination) : 'uninitialized';
     if (result === 'same') { toastr.info('你已经在这个地点。'); return; }
-    if (result === 'no_points') { toastr.warning('行动点不足，无法前往。'); return; }
-    if (result !== 'ok') { toastr.warning('当前聊天尚未初始化地点和行动点，请先初始化变量。'); return; }
+    if (result === 'no_points') { toastr.warning('精力值不足，无法前往。'); return; }
+    if (result !== 'ok') { toastr.warning('当前聊天尚未初始化地点和精力值，请先初始化变量。'); return; }
     if (messageId !== getLastMessageId() || chatId !== SillyTavern.getCurrentChatId()) throw new Error('当前聊天或楼层已变化，请重试');
     await Mvu.replaceMvuData(data, { type: 'message', message_id: messageId });
     refreshAffection();
+    const previousPlace = _.get(previousStat, 'player.area.place');
+    const oldLocation = Array.isArray(previousPlace) ? previousPlace[0] : previousPlace;
+    if (typeof oldLocation === 'string') {
+      const present = _.get(previousStat, ['locations', oldLocation, 'present']);
+      try { await archiveLocation(oldLocation, Array.isArray(present) ? present.filter((x: unknown): x is string => typeof x === 'string') : [], chatId, active => { memoryLoading.value = active; }); }
+      catch (error) { console.error('[RPG游戏界面] 场景记忆保存失败', error); toastr.warning('场景记忆保存失败，聊天原文仍然保留。'); }
+    }
+    if (chatId !== SillyTavern.getCurrentChatId()) return;
+    if (messageId !== getLastMessageId()) {
+      toastr.info('地点已切换；聊天已有新消息，继续当前对话。');
+      return;
+    }
     pendingArrival.value = { location: destination, chatId };
     schedule();
-    toastr.success(`已前往${destination === '玩家的家' ? `${sidebarUserName.value}的家` : destination}，消耗 1 行动点。`);
-    console.info('[RPG游戏界面] 已移动，消耗 1 行动点');
+    toastr.success(`已前往${destination === '玩家的家' ? `${sidebarUserName.value}的家` : destination}，消耗 1 精力值。`);
+    console.info('[RPG游戏界面] 已移动，消耗 1 精力值');
     await describeArrival();
   } catch (error) {
     console.error('[RPG游戏界面] 移动失败', error);
@@ -288,8 +311,8 @@ const confessionImage = computed(() => confessionImages.value[affectionName.valu
 watch([pendingConfession, affectionName], () => { if (confessionChoice.value === null) confessionStep.value = 0; });
 let confessionSummary = '';
 function syncConfessionSummary() {
-  const lines = Object.entries(affectionEntries.value).flatMap(([name, state]) => state.表白已触发 && (state.是否恋人 || state.拒绝后固定)
-    ? [`${name}曾向玩家表白，玩家${state.是否恋人 ? '接受了心意，双方成为恋人' : '婉拒了表白'}。`] : []);
+  const lines = Object.entries(affectionEntries.value).flatMap(([name, state]) => state.confessed && (state.stage === '恋人' || state.stage === '被拒绝')
+    ? [`${name}曾向玩家表白，玩家${state.stage === '恋人' ? '接受了心意，双方成为恋人' : '婉拒了表白'}。`] : []);
   const next = lines.join('\n');
   if (next === confessionSummary) return;
   uninjectPrompts(['rpg-confession-results']);
@@ -297,7 +320,7 @@ function syncConfessionSummary() {
   if (next) injectPrompts([{ id: 'rpg-confession-results', position: 'in_chat', depth: 0, role: 'system', content: `已发生的表白事件（根据当前聊天状态）：\n${next}\n自然衔接后续剧情，不替玩家决定行动。` }]);
 }
 const affectionStage = computed(() => {
-  return getAffectionStage(currentAffection.value?.好感度 ?? 0, roleKnowledge.value[affectionName.value]);
+  return getAffectionStage(currentAffection.value?.affection ?? 0, roleKnowledge.value[affectionName.value], currentAffection.value?.stage);
 });
 function refreshAffection() {
   if (!mvuReady.value) return;
@@ -309,17 +332,31 @@ function refreshAffection() {
       affectionEntries.value = {};
       syncConfessionSummary();
       playerLocation.value = '未知';
+      playerRegion.value = '未知';
       roleLocations.value = {};
+      outfitOverrides.value = {};
+      characterStates.value = {};
+      characterAffectionStages.value = {};
       return;
     }
-    const roles = parsed.data.攻略角色;
+    refreshSidebarValues(parsed.data);
+    const roles = parsed.data.characters;
     const previousKnowledge = JSON.stringify(roleKnowledge.value);
     roleKnowledge.value = { ...initialKnowledge.value, ...readKnowledge(roles) };
-    playerLocation.value = parsed.data.玩家.具体地点;
-    roleLocations.value = Object.fromEntries(Object.entries(roles).map(([name, role]) => [name, role.具体地点]));
+    playerLocation.value = parsed.data.player.area.place;
+    playerRegion.value = parsed.data.player.area.region;
+    const previousLocations = JSON.stringify(roleLocations.value);
+    roleLocations.value = characterLocations(parsed.data);
+    outfitOverrides.value = parsed.data.outfits;
+    characterStates.value = parsed.data.states;
+    characterAffectionStages.value = Object.fromEntries(Object.entries(roles).map(([name, role]) => [name, getAffectionStage(role.affection, role.known, role.stage)]));
+    if (previousLocations !== JSON.stringify(roleLocations.value) && initializedChatId && !initializingDaily) {
+      initializedChatId = '';
+      ensureDailyVariables();
+    }
     affectionEntries.value = Object.fromEntries(
       Object.entries(roles)
-        .filter(([name, role]) => roleKnowledge.value[name] && role && typeof role === 'object' && '好感度' in role)
+        .filter(([name, role]) => roleKnowledge.value[name] && role && typeof role === 'object' && 'affection' in role)
         .map(([name, role]) => [name, readAffection(role as Record<string, unknown>)]),
     );
     syncConfessionSummary();
@@ -335,7 +372,11 @@ function refreshAffection() {
     affectionEntries.value = {};
     syncConfessionSummary();
     playerLocation.value = '未知';
+    playerRegion.value = '未知';
     roleLocations.value = {};
+    outfitOverrides.value = {};
+    characterStates.value = {};
+    characterAffectionStages.value = {};
   }
 }
 async function editAffection(change: (v: Affection, data: ReturnType<typeof Mvu.getMvuData>) => boolean | void): Promise<boolean> {
@@ -344,8 +385,8 @@ async function editAffection(change: (v: Affection, data: ReturnType<typeof Mvu.
   try {
     const messageId = getLastMessageId();
     const data = _.cloneDeep(Mvu.getMvuData({ type: 'message', message_id: messageId }));
-    const role = _.get(data, ['stat_data', '攻略角色', affectionName.value]) as Record<string, unknown> | undefined;
-    if (!role || !('好感度' in role)) throw new Error('当前楼层没有对应的好感度变量');
+    const role = _.get(data, ['stat_data', 'characters', affectionName.value]) as Record<string, unknown> | undefined;
+    if (!role || !('affection' in role)) throw new Error('当前楼层没有对应的好感度变量');
     const state = readAffection(role);
     if (change(state, data) === false) return false;
     writeAffection(role, state);
@@ -371,11 +412,10 @@ async function finishConfession() {
   const accept = confessionChoice.value;
   const saved = await editAffection((state, data) => {
     const parsed = AffectionSchema.safeParse(data.stat_data);
-    if (!parsed.success || !canConfess(state, sceneConfig.value?.roles[affectionName.value]?.confessionLocation, parsed.data.玩家.具体地点, parsed.data.攻略角色[affectionName.value]?.具体地点 ?? '')) { toastr.warning('表白条件已变化，未保存选择。'); return false; }
-    state.表白已触发 = true;
-    state.是否恋人 = accept;
-    state.拒绝后固定 = !accept;
-    state.好感度 = accept ? 100 : 99;
+    if (!parsed.success || !canConfess(state, sceneConfig.value?.roles[affectionName.value]?.confessionLocation, parsed.data.player.area.place, characterLocations(parsed.data)[affectionName.value] ?? '')) { toastr.warning('表白条件已变化，未保存选择。'); return false; }
+    state.confessed = true;
+    state.stage = accept ? '恋人' : '被拒绝';
+    state.affection = accept ? 100 : 99;
   });
   if (!saved) return;
   confessionFading.value = true;
@@ -387,20 +427,20 @@ async function finishConfession() {
 function setTestAffection() {
   if (!Number.isFinite(testValue.value)) return;
   void editAffection(state => {
-    state.好感度 = Math.max(0, Math.min(100, Math.round(testValue.value)));
-    state.拒绝后固定 = false;
+    state.affection = Math.max(0, Math.min(100, Math.round(testValue.value)));
+    if (state.stage === '被拒绝') state.stage = '陌生';
   });
 }
 function resetConfession() {
   void editAffection(state => {
-    state.表白已触发 = false;
-    state.拒绝后固定 = false;
-    state.是否恋人 = false;
+    state.confessed = false;
+    state.stage = '陌生';
   });
 }
 const converter = new host.showdown.Converter({ tables: true, strikethrough: true, simpleLineBreaks: true });
-function renderText(text: string) {
+function renderText(text: string, compactNarration = false) {
   text = narrativeOnly(text);
+  if (compactNarration) text = text.replace(/\s*\r?\n\s*/g, ' ');
   const container = doc.createElement('div');
   container.innerHTML = host.DOMPurify.sanitize(converter.makeHtml(text));
   const walker = doc.createTreeWalker(container, NodeFilter.SHOW_TEXT);
@@ -438,8 +478,9 @@ function renderText(text: string) {
   return container.innerHTML;
 }
 type DisplayPart = { name: string; html: string; expression?: string; tagged?: boolean };
-const transcript = ref<{ id: number; parts: DisplayPart[] }[]>([]);
+const transcript = ref<{ id: number; parts: DisplayPart[]; reasoning: string }[]>([]);
 const stream = ref('');
+const streamReasoning = ref('');
 const drafted = ref('');
 const sceneConfig = ref<SceneConfig | undefined>();
 const sceneImages = ref<Record<string, Record<string, string>>>({});
@@ -449,24 +490,27 @@ function speakerLabel(name: string, knowledge: Knowledge): string {
 }
 const streamParts = computed(() => {
   const name = context().characters.find(c => c.avatar === drafted.value)?.name || '正在书写';
-  return sceneConfig.value ? splitDialogueForDisplay(splitSceneDialogue(narrativeOnly(stream.value), name, true)) : stream.value ? [{ name, text: stream.value, tagged: false }] : [];
+  const narrative = narrativeOnly(stream.value);
+  return sceneConfig.value ? splitDialogueForDisplay(splitSceneDialogue(narrative, name, true), true) : narrative ? [{ name, text: narrative, tagged: false }] : [];
 });
+const displayedStreamReasoning = computed(() => reasoningForDisplay(stream.value, streamReasoning.value));
 const messageBox = ref<HTMLElement>();
 let followLatest = true;
 function refreshMessages() {
   const c = context();
-  const streamingId = stream.value ? c.streamingProcessor?.messageId : undefined;
+  const streamingId = stream.value || streamReasoning.value ? c.streamingProcessor?.messageId : undefined;
   let historyKnowledge = { ...initialKnowledge.value };
   transcript.value = c.chat.flatMap((m, id) => {
     if (m.is_system || typeof m.mes !== 'string' || id === streamingId) return [];
     const parts = sceneConfig.value && !m.is_user
       ? splitDialogueForDisplay(splitSceneDialogue(narrativeOnly(m.mes), m.name || '旁白'))
-      : [{ name: m.name || '旁白', text: m.mes, tagged: false }];
-    const result = parts.map(part => ({ name: m.is_user ? part.name : speakerLabel(part.name, historyKnowledge), html: renderText(part.text), expression: part.expression, tagged: part.tagged }));
+      : [{ name: m.name || '旁白', text: m.is_user ? m.mes : narrativeOnly(m.mes), tagged: false }].filter(part => part.text.trim());
+    const result = parts.map(part => ({ name: m.is_user ? part.name : speakerLabel(part.name, historyKnowledge), html: renderText(part.text, !m.is_user && part.name === '旁白'), expression: part.expression, tagged: part.tagged }));
     if (mvuReady.value) {
-      try { historyKnowledge = { ...historyKnowledge, ...readKnowledge(Mvu.getMvuData({ type: 'message', message_id: id }).stat_data?.攻略角色) }; } catch { /* 楼层可能没有变量快照 */ }
+      try { historyKnowledge = { ...historyKnowledge, ...readKnowledge(Mvu.getMvuData({ type: 'message', message_id: id }).stat_data?.characters) }; } catch { /* 楼层可能没有变量快照 */ }
     }
-    return result.length ? [{ id, parts: result }] : [];
+    const reasoning = m.is_user ? '' : reasoningForDisplay(m.mes, m.extra?.reasoning);
+    return result.length || reasoning ? [{ id, parts: result, reasoning }] : [];
   });
   if (followLatest)
     void nextTick(() => {
@@ -484,9 +528,12 @@ const sprites = ref<Sprite[]>([]);
 const selected = ref('');
 const editing = ref(false);
 const options = ref(false);
-const fullscreen = ref(false);
+// 同一浏览器标签页内恢复全屏选择，脚本重载不会丢失。
+const fullscreenKey = 'rpg-game-fullscreen';
+const fullscreen = ref(host.sessionStorage.getItem(fullscreenKey) === 'true');
 function toggleFullscreen() {
   fullscreen.value = !fullscreen.value;
+  host.sessionStorage.setItem(fullscreenKey, String(fullscreen.value));
   doc.body.classList.toggle('rpg-fullscreen-active', fullscreen.value);
 }
 const background = ref('');
@@ -494,6 +541,7 @@ const backgroundSize = ref('cover');
 const backgroundPosition = ref('center');
 const groupBusy = ref(false);
 const advancePending = ref(false);
+const waitingForReply = ref(false);
 let lockedInput: { element: HTMLTextAreaElement; wasReadOnly: boolean } | undefined;
 function releaseInputLock() {
   if (!lockedInput) return;
@@ -506,11 +554,13 @@ async function describeArrival() {
   if (!pending || groupBusy.value || advancePending.value || resting.value || affectionBusy.value) return;
   const input = doc.querySelector<HTMLTextAreaElement>('#send_textarea');
   if (!input || input.value.trim()) {
-    toastr.warning('已到达目的地。输入框有未发送内容或暂不可用，请处理后点击“描述当前地点”。');
+    toastr.warning('已到达目的地。输入框有未发送内容或暂不可用，请处理后通过对话继续。');
+    if (pendingArrival.value === pending) pendingArrival.value = null;
     return;
   }
   if (context().onlineStatus === 'no_connection') {
-    toastr.warning('已到达目的地。请连接模型后点击“描述当前地点”。');
+    toastr.warning('已到达目的地。请连接模型后通过对话继续。');
+    if (pendingArrival.value === pending) pendingArrival.value = null;
     return;
   }
   advancePending.value = true;
@@ -522,12 +572,7 @@ async function describeArrival() {
     if (messageId < 0 || pending.chatId !== SillyTavern.getCurrentChatId()) throw new Error('当前聊天已变化');
     const data = Mvu.getMvuData({ type: 'message', message_id: messageId });
     if (!_.isPlainObject(data.stat_data)) throw new Error('当前楼层尚未初始化');
-    let roster = defaultRoster;
-    const book = getCharWorldbookNames('current').primary;
-    if (book) {
-      const entry = (await getWorldbook(book)).find(item => item.name === '角色列表' && item.enabled);
-      if (entry) roster = entry.content;
-    }
+    const roster = await readCharacterRoster();
     if (pending !== pendingArrival.value || pending.chatId !== SillyTavern.getCurrentChatId() || messageId !== getLastMessageId()) throw new Error('聊天或楼层已变化');
     const scene = buildArrivalScene(data.stat_data, roster);
     if (scene.location !== pending.location) throw new Error('玩家地点已变化');
@@ -538,49 +583,15 @@ async function describeArrival() {
     console.info('[RPG游戏界面] 已生成到达地点场景', scene.location);
   } catch (error) {
     console.error('[RPG游戏界面] 到达场景生成失败', error);
-    toastr.warning('地点已保存，但场景生成失败；可点击“描述当前地点”重试，不会再次消耗行动点。');
+    toastr.warning('地点已保存，但场景生成失败；可通过对话继续，不会再次消耗精力值。');
+    if (pendingArrival.value === pending) pendingArrival.value = null;
   } finally {
     injection?.uninject();
     releaseInputLock();
     advancePending.value = false;
   }
 }
-async function advanceStory() {
-  const input = doc.querySelector<HTMLTextAreaElement>('#send_textarea');
-  if (!input) {
-    toastr.error('找不到酒馆输入框。');
-    return;
-  }
-  if (input.value.trim()) {
-    toastr.warning('酒馆输入框有未发送的内容，请先发送或清空。');
-    return;
-  }
-  if (groupBusy.value || advancePending.value || traveling.value || resting.value || affectionBusy.value) {
-    toastr.warning('正在生成或保存状态，请稍候。');
-    return;
-  }
-  const c = context();
-  if (c.onlineStatus === 'no_connection') {
-    toastr.warning('请先连接模型。');
-    return;
-  }
-  advancePending.value = true;
-  lockedInput = { element: input, wasReadOnly: input.readOnly };
-  input.readOnly = true;
-  try {
-    console.info('[RPG游戏界面] 推进剧情');
-    await SillyTavern.generate('normal');
-  } catch (error) {
-    console.error('[RPG游戏界面] 推进剧情失败', error);
-    toastr.error('推进剧情失败，请查看酒馆控制台。');
-  } finally {
-    releaseInputLock();
-    advancePending.value = false;
-  }
-}
 const scene = ref<HTMLElement>();
-const known = new Map<string, string>();
-let observer: MutationObserver | undefined;
 let frame = 0;
 let disposed = false;
 let drag:
@@ -633,65 +644,31 @@ function resetPosition() {
 function updateArt() {
   frame = 0;
   if (disposed) return;
-  const bg = doc.querySelector('#bg1');
-  if (bg) {
-    const style = host.getComputedStyle(bg);
-    background.value = style.backgroundImage === 'none' ? '' : style.backgroundImage;
-    backgroundSize.value = style.backgroundSize;
-    backgroundPosition.value = style.backgroundPosition;
-  }
+  const localBackground = backgroundForLocation(artwork.backgrounds, playerLocation.value);
+  background.value = localBackground ? `url("${loadArtwork(localBackground)}")` : '';
   if (sceneConfig.value) {
     const appearances = recentPortraitAppearances(
       context().chat,
-      (message, streaming) => splitSceneDialogue(narrativeOnly(message), '', streaming),
+      (message, streaming) => splitDialogueForDisplay(splitSceneDialogue(narrativeOnly(message), '', streaming), streaming),
       stream.value,
-      context().streamingProcessor?.messageId,
     );
     sprites.value = Object.keys(sceneConfig.value.roles).flatMap(name => {
       if (!isPortraitPresent(playerLocation.value, roleLocations.value[name])) return [];
       const appearance = appearances[name];
       const images = sceneImages.value[name] ?? {};
-      const src = (appearance?.current && images[appearance.expression]) || images.neutral || Object.values(images)[0];
-      return src ? [{ avatar: `scene:${name}`, name, src, current: true }] : [];
+      const src = portraitForExpression(images, appearance?.current ? appearance.expression : undefined);
+      return src ? [{ avatar: `scene:${name}`, name, src, current: Boolean(appearance?.current) }] : [];
     });
     if (!sprites.value.some(s => s.avatar === selected.value)) selected.value = sprites.value[0]?.avatar || '';
     return;
   }
-  const c = context(),
-    avatars = members();
-  const belongs = (avatar: string, image: HTMLImageElement) => {
-    const character = c.characters.find(x => x.avatar === avatar);
-    if (!character || !image.getAttribute('src')) return false;
-    const folder = c.extensionSettings.expressionOverrides?.find(x => x.name === avatar)?.path || character.name;
-    try {
-      return decodeURIComponent(new URL(image.src, doc.location.origin).pathname).startsWith(`/characters/${folder}/`);
-    } catch {
-      return false;
-    }
-  };
-  doc.querySelectorAll<HTMLElement>('#visual-novel-wrapper .expression-holder[data-avatar]').forEach(holder => {
-    const avatar = holder.dataset.avatar,
-      image = holder.querySelector<HTMLImageElement>('img.expression');
-    if (
-      avatar &&
-      avatars.includes(avatar) &&
-      image &&
-      belongs(avatar, image) &&
-      host.getComputedStyle(holder).display !== 'none'
-    )
-      known.set(avatar, image.currentSrc || image.src);
-  });
-  const holder = doc.querySelector<HTMLElement>('#expression-holder'),
-    image = holder?.querySelector<HTMLImageElement>('#expression-image');
-  if (holder && image && host.getComputedStyle(holder).display !== 'none') {
-    const avatar = avatars.find(a => belongs(a, image));
-    if (avatar) known.set(avatar, image.currentSrc || image.src);
-  }
+  const c = context(), avatars = members();
   sprites.value = avatars.flatMap(avatar => {
-    const character = c.characters.find(x => x.avatar === avatar),
-      src = known.get(avatar);
+    const character = c.characters.find(x => x.avatar === avatar);
     const location = character && roleLocations.value[character.name];
     if (!isPortraitPresent(playerLocation.value, location)) return [];
+    const defaultPath = character ? artwork.defaults[character.name] : undefined;
+    const src = defaultPath ? loadArtwork(defaultPath) : '';
     return character && src ? [{ avatar, name: character.name, src }] : [];
   });
   if (!sprites.value.some(s => s.avatar === selected.value)) selected.value = sprites.value[0]?.avatar || '';
@@ -699,56 +676,36 @@ function updateArt() {
 function schedule() {
   if (!frame) frame = requestAnimationFrame(updateArt);
 }
-watch(() => JSON.stringify([playerLocation.value, roleLocations.value]), schedule);
-async function loadSprites() {
+watch(() => JSON.stringify([playerLocation.value, roleLocations.value, outfitOverrides.value, characterStates.value, characterAffectionStages.value, Object.entries(sceneConfig.value?.roles ?? {}).map(([name, role]) => [name, role.folder, role.appearance, role.defaultOutfit, role.outfits, role.outfitsByLocation, role.states, role.affectionBehaviors])]), () => {
+  schedule();
+  const roles = sceneConfig.value?.roles ?? {};
+  const content = appearancePrompt(roles, playerLocation.value, roleLocations.value, outfitOverrides.value, characterStates.value, characterAffectionStages.value);
+  uninjectPrompts(['rpg-current-appearance']);
+  if (content) injectPrompts([{ id: 'rpg-current-appearance', position: 'in_chat', depth: 0, role: 'system', content }]);
+  sceneImages.value = {};
+  void loadSprites();
+});
+function loadSprites() {
   const activeConfig = sceneConfig.value;
   if (activeConfig) {
-    const entries = await Promise.all(Object.entries(activeConfig.roles).map(async ([name, role]) => {
-      const images: Record<string, string> = role.fallback ? { neutral: role.fallback } : {};
-      let confession = '';
-      try {
-        const response = await fetch(`${doc.location.origin}/api/sprites/get?name=${encodeURIComponent(role.folder)}`);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data: { label: string; path: string }[] = await response.json();
-        data.forEach(item => {
-          if (!item.path) return;
-          const filename = decodeURIComponent(item.path.split(/[?#]/, 1)[0].split('/').pop() ?? '');
-          if (/^confession_event\.(png|jpg)$/i.test(filename)) {
-            if (!confession || /\.png$/i.test(filename)) confession = new URL(item.path, doc.location.origin).href;
-            return;
-          }
-          if (item.label && item.path) images[item.label.replace(/[-.](?:\d+|[^.]+)$/, '')] = new URL(item.path, doc.location.origin).href;
-        });
-      } catch (error) { console.warn(`[RPG游戏界面] 无法读取 ${name} 的立绘，使用内置图片`, error); }
+    const entries = Object.entries(activeConfig.roles).filter(([name]) => isPortraitPresent(playerLocation.value, roleLocations.value[name])).map(([name, role]) => {
+      const outfit = selectOutfit(role, roleLocations.value[name] ?? '', outfitOverrides.value[name], characterStates.value[name]?.['state']);
+      const outfits = artwork.portraits[name] ?? {};
+      const folder = outfit?.folder ?? outfit?.name ?? '';
+      const selected = outfits[folder] ?? (outfit ? outfits[outfit.name] : undefined) ?? (outfit?.name === '日常' ? outfits.便服 : undefined) ?? {};
+      const confession = selected.confession_event ? loadArtwork(selected.confession_event) : '';
+      const images = Object.fromEntries(Object.entries(expressionsForOutfit(selected, artwork.defaults[name])).map(([label, path]) => [label, loadArtwork(path)]));
       return [name, images, confession] as const;
-    }));
-    if (disposed || sceneConfig.value !== activeConfig) return;
+    });
     sceneImages.value = Object.fromEntries(entries.map(([name, images]) => [name, images]));
     confessionImages.value = Object.fromEntries(entries.map(([name, , confession]) => [name, confession]));
     uninjectPrompts(['rpg-scene-expression-list']);
-    const choices = entries.map(([name, images]) => `${name}：${Object.keys(images).join('、') || 'neutral'}`).join('\n');
-    injectPrompts([{ id: 'rpg-scene-expression-list', position: 'in_chat', depth: 0, role: 'system', content: `场景输出格式：每段角色发言或动作前单独一行输出 [角色名.表情]，旁白前单独输出 [旁白]。即使玩家尚未认识角色，标记中仍使用角色真实名字供界面识别；正文和其他角色可以自然提及名字。是否认识仅在角色自我介绍或他人明确向玩家介绍该角色并让玩家确认本人时更新；仅对话、在场或单纯提及名字不自动认识。角色可以相互认识。已配置立绘角色只能使用各自列表内的表情；不确定或其他临时角色使用 neutral。不要替玩家决定言行。\n${choices}` }]);
-    console.info('[RPG游戏界面] 已加载多角色表情列表');
+    const choices = entries.map(([name, images]) => `${name}：${Object.keys(images).join('、') || 'default'}`).join('\n');
+    injectPrompts([{ id: 'rpg-scene-expression-list', position: 'in_chat', depth: 0, role: 'system', content: `场景输出格式：每段角色发言单独成行，使用 [角色名.表情] “台词” 的格式，标记和台词写在同一行。动作或环境描写以 [旁白] 开头，标记与正文可以写在同一行，不要求另起一行。标记使用角色真实名字；角色身份是否认识遵循变量更新规则。default 使用角色默认立绘，其他表情使用当前服装的文件名（不含扩展名）；不确定时使用 default，不得虚构未列出的表情。不要替玩家决定言行。\n${choices}` }]);
+    console.info('[RPG游戏界面] 已加载本地立绘与表情列表');
     schedule();
     return;
   }
-  const c = context();
-  const results = await Promise.allSettled(
-    members().map(async avatar => {
-      const ch = c.characters.find(x => x.avatar === avatar);
-      if (!ch) return null;
-      const folder = c.extensionSettings.expressionOverrides?.find(x => x.name === avatar)?.path || ch.name;
-      const response = await fetch(`${doc.location.origin}/api/sprites/get?name=${encodeURIComponent(folder)}`);
-      if (!response.ok) return null;
-      const data: { label: string; path: string }[] = await response.json();
-      const image = data.find(x => x.label === 'neutral') || data[0];
-      return image?.path ? ([avatar, new URL(image.path, doc.location.origin).href] as const) : null;
-    }),
-  );
-  if (disposed) return;
-  results.forEach(r => {
-    if (r.status === 'fulfilled' && r.value && !known.has(r.value[0])) known.set(...r.value);
-  });
   schedule();
 }
 function pointerDown(event: PointerEvent, sprite: Sprite, i: number) {
@@ -778,30 +735,27 @@ function pointerMove(event: PointerEvent) {
   });
 }
 onMounted(() => {
+  doc.body.classList.toggle('rpg-fullscreen-active', fullscreen.value);
+  try { initializeMemory(); } catch (error) { console.warn('[RPG游戏界面] 场景记忆初始化失败', error); }
   let syncSequence = 0;
   const syncScene = async () => {
     const sequence = ++syncSequence;
     const source = host.__rpgSceneConfig;
     if (!source) {
       sceneConfig.value = undefined;
-    } else if (!source.rosterFromWorldbook) {
-      sceneConfig.value = source;
     } else {
       try {
         const name = getCharWorldbookNames('current').primary;
         if (!name) throw new Error('当前角色未绑定主要世界书');
-        const entries = await getWorldbook(name);
-        const list = entries.find(entry => entry.name === '角色列表' && entry.enabled);
-        if (!list) throw new Error(`世界书 ${name} 中没有启用的“角色列表”条目`);
-        const roles = parseSceneRoster(list.content, source.roles);
+        const roles = parseSceneRoster(await readCharacterRoster());
         if (sequence !== syncSequence || host.__rpgSceneConfig !== source) return;
         sceneConfig.value = { ...source, roles };
-        console.info(`[RPG游戏界面] 已从世界书 ${name} 读取 ${Object.keys(roles).length} 个角色`);
+        console.info(`[RPG游戏界面] 已从世界书 ${name} 的角色索引读取 ${Object.keys(roles).length} 个角色`);
       } catch (error) {
         if (sequence !== syncSequence || host.__rpgSceneConfig !== source) return;
         console.error('[RPG游戏界面] 读取世界书角色列表失败', error);
         sceneConfig.value = { ...source, roles: {} };
-        toastr.warning('无法读取世界书角色列表，请检查角色绑定和条目格式。');
+        toastr.warning('无法读取角色索引或角色详情，请检查世界书条目。');
       }
     }
     sceneImages.value = {};
@@ -814,10 +768,8 @@ onMounted(() => {
   host.addEventListener('rpg-scene-config-changed', onSceneConfig);
   void syncScene();
   const worldbookListener = eventOn(tavern_events.WORLDINFO_UPDATED, name => {
-    if (host.__rpgSceneConfig?.rosterFromWorldbook && name === getCharWorldbookNames('current').primary) void syncScene();
+    if (host.__rpgSceneConfig?.rosterFromWorldbook && name === getCharWorldbookNames('current').primary) { initializedChatId = ''; void syncScene(); ensureDailyVariables(); }
   });
-  // 清除旧版界面遗留的注入，地点提示由世界书模板提供。
-  uninjectPrompts(['rpg-current-scene']);
   const promptCheckListener = eventOn(tavern_events.GENERATE_AFTER_DATA, (data, dryRun) => {
     if (dryRun || !Array.isArray(data.prompt)) return;
     const prompt = JSON.stringify(data.prompt);
@@ -829,16 +781,38 @@ onMounted(() => {
       console.info('[RPG游戏界面] 已确认生成请求包含地点提示', { hasArrival });
     }
   });
+  const memoryPromptListener = eventOn(tavern_events.GENERATION_AFTER_COMMANDS, () => {
+    try {
+      const stat = Mvu.getMvuData({ type: 'message', message_id: 'latest' }).stat_data;
+      if (_.isPlainObject(stat)) prepareMemoryPrompt(stat);
+    } catch (error) { console.warn('[RPG游戏界面] 场景记忆读取失败，保留聊天原文', error); }
+  });
+  const memoryFilterListener = eventOn(tavern_events.CHAT_COMPLETION_PROMPT_READY, ({ chat }) => {
+    try { filterArchivedPrompt(chat); }
+    catch (error) { console.warn('[RPG游戏界面] 场景记忆过滤失败，保留聊天原文', error); }
+  });
+  const loadingStart = eventOn(tavern_events.GENERATION_AFTER_COMMANDS, (type, _options, dryRun) => {
+    if (!dryRun && type !== 'quiet' && type !== 'impersonate' && context().onlineStatus !== 'no_connection') { streamReasoning.value = ''; waitingForReply.value = true; }
+  });
+  const loadingStop = eventOn(tavern_events.GENERATION_STOPPED, () => { waitingForReply.value = false; });
   onUnmounted(() => {
     syncSequence++;
     worldbookListener.stop();
     promptCheckListener.stop();
+    memoryPromptListener.stop();
+    memoryFilterListener.stop();
+    loadingStart.stop();
+    loadingStop.stop();
+    uninjectPrompts(['rpg-scene-memories']);
     uninjectPrompts(['rpg-current-scene']);
     host.removeEventListener('rpg-scene-config-changed', onSceneConfig);
     uninjectPrompts(['rpg-scene-expression-list']);
   });
   void (async () => {
     await waitGlobalInitialized('Mvu');
+    if (affectionDisposed) return;
+    const initialized = await initializeMissingDailyVariables();
+    if (initialized) initializedChatId = SillyTavern.getCurrentChatId() ?? '';
     if (affectionDisposed) return;
     mvuReady.value = true;
     // 校验世界书模板与当前消息的地点状态，结果只写入控制台，不更改聊天或变量。
@@ -857,22 +831,21 @@ onMounted(() => {
     }
     if (affectionDisposed) return;
     affectionListener = eventOn(Mvu.events.VARIABLE_UPDATE_ENDED, (next, previous) => {
-      // AI 不得修改由界面控制的日期、行动点和地点。
-      for (const path of ['stat_data.游戏时间', 'stat_data.玩家.行动点', 'stat_data.玩家.具体地点']) {
+      // AI 不得修改由界面控制的日期、精力值和地点。
+      for (const path of ['stat_data.time', 'stat_data.player.energy', 'stat_data.player.area', 'stat_data.locations', 'stat_data._locationsInit', 'stat_data.outfits', 'stat_data.states']) {
         if (_.has(previous, path)) _.set(next, path, _.cloneDeep(_.get(previous, path)));
       }
-      const oldRoles = _.get(previous, 'stat_data.攻略角色');
+      const oldRoles = _.get(previous, 'stat_data.characters');
       if (!_.isPlainObject(oldRoles)) return;
-      if (!_.isPlainObject(_.get(next, 'stat_data.攻略角色'))) {
-        _.set(next, 'stat_data.攻略角色', _.cloneDeep(oldRoles));
+      if (!_.isPlainObject(_.get(next, 'stat_data.characters'))) {
+        _.set(next, 'stat_data.characters', _.cloneDeep(oldRoles));
       }
-      const nextRoles = _.get(next, 'stat_data.攻略角色');
+      const nextRoles = _.get(next, 'stat_data.characters');
       Object.keys(oldRoles).forEach(name => {
         if (!_.isPlainObject(nextRoles[name])) nextRoles[name] = _.cloneDeep(oldRoles[name]);
         if (_.isPlainObject(oldRoles[name])) {
           protectAffection(nextRoles[name], oldRoles[name]);
-          if (knowsRole(oldRoles[name]) && !knowsRole(nextRoles[name])) nextRoles[name].是否认识 = _.cloneDeep(oldRoles[name].是否认识);
-          if (_.has(oldRoles[name], '具体地点')) nextRoles[name].具体地点 = _.cloneDeep(oldRoles[name].具体地点);
+          if (knowsRole(oldRoles[name]) && !knowsRole(nextRoles[name])) nextRoles[name].known = _.cloneDeep(oldRoles[name].known);
           syncAffectionStage(nextRoles[name]);
         }
       });
@@ -883,17 +856,6 @@ onMounted(() => {
     affectionTimer = setInterval(() => { refreshAffection(); ensureDailyVariables(); }, 1000);
     console.info('[RPG游戏界面] MVU 好感度保护已启用');
   })().catch(error => console.error('[RPG游戏界面] MVU 初始化失败', error));
-  observer = new MutationObserver(schedule);
-  ['#bg1', '#expression-wrapper', '#visual-novel-wrapper'].forEach(selector => {
-    const node = doc.querySelector(selector);
-    if (node)
-      observer!.observe(node, {
-        attributes: true,
-        attributeFilter: ['src', 'style', 'class', 'hidden'],
-        subtree: true,
-        childList: true,
-      });
-  });
   updateArt();
   void loadSprites();
   refreshMessages();
@@ -906,24 +868,42 @@ onMounted(() => {
   ].forEach(event =>
     eventOn(event, () => {
       stream.value = '';
+      streamReasoning.value = '';
+      if (event === tavern_events.MESSAGE_RECEIVED) waitingForReply.value = false;
+      if (event === tavern_events.MESSAGE_SWIPED || event === tavern_events.MESSAGE_DELETED) {
+        initializedChatId = '';
+        ensureDailyVariables();
+      }
       refreshMessages();
       schedule();
     }),
   );
   eventOn(tavern_events.STREAM_TOKEN_RECEIVED, text => {
     stream.value = text;
+    if (narrativeOnly(text).replace(/^\s*\[[^\]\n]*(?:\]|$)/gm, '').trim()) waitingForReply.value = false;
     refreshMessages();
     schedule();
   });
+  eventOn(tavern_events.STREAM_REASONING_DONE, reasoning => {
+    streamReasoning.value = reasoning;
+    refreshMessages();
+  });
+  [tavern_events.MESSAGE_REASONING_EDITED, tavern_events.MESSAGE_REASONING_DELETED].forEach(event => eventOn(event, refreshMessages));
   eventOn(tavern_events.GENERATION_ENDED, () => {
+    waitingForReply.value = false;
     stream.value = '';
+    streamReasoning.value = '';
     drafted.value = '';
     refreshMessages();
     schedule();
   });
   eventOn(tavern_events.CHAT_CHANGED, () => {
+    waitingForReply.value = false;
+    memoryLoading.value = false;
     pendingArrival.value = null;
     uninjectPrompts(['rpg-arrival-scene']);
+    uninjectPrompts(['rpg-scene-memories']);
+    try { initializeMemory(); } catch (error) { console.warn('[RPG游戏界面] 场景记忆初始化失败', error); }
     confessionChoice.value = null;
     confessionStep.value = 0;
     confessionFading.value = false;
@@ -932,10 +912,14 @@ onMounted(() => {
     affectionEntries.value = {};
     roleKnowledge.value = {};
     playerLocation.value = '未知';
+    playerRegion.value = '未知';
     roleLocations.value = {};
+    outfitOverrides.value = {};
+    characterStates.value = {};
+    characterAffectionStages.value = {};
     stream.value = '';
+    streamReasoning.value = '';
     drafted.value = '';
-    known.clear();
     settings.value = Settings.parse(
       getVariables({ type: 'chat' }).rpgGameInterface ?? getVariables({ type: 'script' }),
     );
@@ -969,13 +953,13 @@ onMounted(() => {
 onUnmounted(() => {
   uninjectPrompts(['rpg-arrival-scene']);
   uninjectPrompts(['rpg-confession-results']);
+  uninjectPrompts(['rpg-current-appearance']);
   affectionDisposed = true;
   affectionListener?.stop();
   if (affectionTimer) clearInterval(affectionTimer);
   doc.body.classList.remove('rpg-fullscreen-active');
   releaseInputLock();
   disposed = true;
-  observer?.disconnect();
   if (frame) cancelAnimationFrame(frame);
 });
 </script>
@@ -983,7 +967,7 @@ onUnmounted(() => {
 <template>
   <div class="rpg-card" :class="{ 'diary-open': diaryOpen }">
     <button class="diary-toggle" :aria-expanded="diaryOpen" aria-label="状态栏" @click="diaryOpen = !diaryOpen">✧ 状态栏 <span>{{ diaryOpen ? '×' : '' }}</span></button>
-    <StatusSidebar v-if="diaryOpen" :player-location="playerLocation" :day="sidebarDay" :date="sidebarDate" :action-points="sidebarActionPoints" :characters="sidebarCharacters" :user-name="sidebarUserName" :resting="resting" :traveling="traveling" @rest="restUntilTomorrow" @travel="travelToLocation" />
+    <StatusSidebar v-if="diaryOpen" :player-region="playerRegion" :player-location="playerLocation" :day="sidebarDay" :date="sidebarDate" :action-points="sidebarActionPoints" :characters="sidebarCharacters" :character-locations="Object.values(roleLocations)" :user-name="sidebarUserName" :resting="resting" :traveling="traveling" @rest="restUntilTomorrow" @travel="travelToLocation" />
     <div ref="scene" class="scene" :style="confessionPlaying ? { backgroundImage: 'none', backgroundColor: '#101827' } : { backgroundImage: background, backgroundSize, backgroundPosition }">
       <div v-if="!confessionPlaying" class="shade"></div>
       <div v-if="!confessionPlaying" class="sprites" :class="{ editing }">
@@ -1009,16 +993,12 @@ onUnmounted(() => {
           @pointercancel="drag = undefined"
         />
       </div>
+      <div v-if="waitingForReply || memoryLoading" class="reply-loading" role="status" aria-live="polite" :aria-label="memoryLoading ? '正在整理场景记忆' : '正在加载回复'">
+        <span class="reply-loading-ring" aria-hidden="true"></span>
+        <span>{{ memoryLoading ? '正在整理场景记忆' : '正在加载回复' }}</span>
+      </div>
       <div class="toolbar">
-        <button v-if="pendingArrival" :disabled="advancePending || groupBusy || traveling" @click="describeArrival">✦ 描述当前地点</button>
-        <button @click="affectionOpen = !affectionOpen">♡ 好感度<span v-if="currentAffection"> {{ currentAffection.好感度 }}</span></button>
-        <button
-          :disabled="groupBusy || advancePending"
-          title="继续当前剧情"
-          @click="advanceStory"
-        >
-          ✦ 推进剧情
-        </button>
+        <button @click="affectionOpen = !affectionOpen">♡ 好感度<span v-if="currentAffection"> {{ currentAffection.affection }}</span></button>
         <button
           @click="
             editing = !editing;
@@ -1042,9 +1022,9 @@ onUnmounted(() => {
           <label v-if="Object.keys(affectionEntries).length > 1">角色
             <select v-model="affectionName"><option v-for="name in Object.keys(affectionEntries)" :key="name" :value="name">{{ name }}</option></select>
           </label>
-          <div class="affection-row"><span>{{ affectionName }} · {{ affectionStage }}</span><b>{{ currentAffection.好感度 }} / 100</b></div>
-          <div class="affection-track"><div :style="{ width: `${currentAffection.好感度}%` }"></div></div>
-          <p>{{ currentAffection.是否恋人 ? '恋人' : '尚未成为恋人' }}<span v-if="currentAffection.拒绝后固定"> · 好感度已固定</span></p>
+          <div class="affection-row"><span>{{ affectionName }} · {{ affectionStage }}</span><b>{{ currentAffection.affection }} / 100</b></div>
+          <div class="affection-track"><div :style="{ width: `${currentAffection.affection}%` }"></div></div>
+          <p>{{ affectionStage }}<span v-if="currentAffection.stage === '被拒绝'"> · 好感度已固定</span></p>
           <button v-if="pendingConfession && confessionLine" @click="affectionOpen = false">查看表白</button>
           <p v-if="pendingConfession && !confessionLine">该角色的表白事件尚未配置。</p>
           <button @click="testOpen = !testOpen">{{ testOpen ? '收起测试' : '测试工具' }}</button>
@@ -1083,15 +1063,23 @@ onUnmounted(() => {
       @scroll="onScroll"
     >
       <article v-for="floor in transcript" :key="floor.id" class="message">
+        <details v-if="floor.reasoning" class="reasoning">
+          <summary>思考过程</summary>
+          <div class="reasoning-text">{{ floor.reasoning }}</div>
+        </details>
         <div v-for="(part, index) in floor.parts" :key="index" class="message-part" :class="{ character: part.name !== '旁白' }">
           <div v-if="part.name !== '旁白'" class="speaker">{{ part.name }}</div>
           <div class="text" v-html="part.html"></div>
         </div>
       </article>
-      <article v-if="streamParts.length" class="message">
+      <article v-if="streamParts.length || displayedStreamReasoning" class="message">
+        <details v-if="displayedStreamReasoning" class="reasoning">
+          <summary>思考过程</summary>
+          <div class="reasoning-text">{{ displayedStreamReasoning }}</div>
+        </details>
         <div v-for="(part, index) in streamParts" :key="index" class="message-part" :class="{ character: part.name !== '旁白' }">
           <div v-if="part.name !== '旁白'" class="speaker">{{ speakerLabel(part.name, roleKnowledge) }}</div>
-          <div class="text" v-html="renderText(part.text)"></div>
+          <div class="text" v-html="renderText(part.text, part.name === '旁白')"></div>
         </div>
       </article>
       <p v-if="!transcript.length && !stream">暂无聊天消息</p>
@@ -1103,7 +1091,7 @@ onUnmounted(() => {
           <option v-for="s in sprites" :key="s.avatar" :value="s.avatar">{{ s.name }}</option>
         </select></label
       >
-      <p v-if="!sprites.length">请先在酒馆的角色表情扩展中设置立绘。</p>
+      <p v-if="!sprites.length">当前在场角色没有可用的本地立绘。</p>
       <template v-else
         ><label
           v-for="item in [
@@ -1139,7 +1127,7 @@ onUnmounted(() => {
           @input="save"
       /></label>
       <label
-        >{{ sceneConfig ? '仅上条回复出现的角色不透明度' : '未发言角色不透明度' }} {{ settings.idleOpacity }}%<input
+        >未发言角色不透明度 {{ settings.idleOpacity }}%<input
           v-model.number="settings.idleOpacity"
           type="range"
           min="0"
@@ -1221,6 +1209,33 @@ onUnmounted(() => {
   inset: 0;
   pointer-events: none;
 }
+.reply-loading {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: #f3e4c2;
+  font-size: 14px;
+  letter-spacing: .08em;
+  text-shadow: 0 2px 8px #000;
+  pointer-events: none;
+}
+.reply-loading-ring {
+  width: 44px;
+  height: 44px;
+  border: 3px solid #e8d4a34d;
+  border-top-color: #f4dfad;
+  border-radius: 50%;
+  filter: drop-shadow(0 2px 5px #0009);
+  animation: reply-loading-spin .8s linear infinite;
+}
+@keyframes reply-loading-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .reply-loading-ring { animation-duration: 2s; } }
 .sprite {
   position: absolute;
   max-width: 100%;
@@ -1291,6 +1306,9 @@ onUnmounted(() => {
   margin-top: 10px;
 }
 .message-part + .message-part { margin-top: .6em; }
+.reasoning { margin: 0 0 .65em; color: #cfbea1; font-size: var(--rpg-font-size, 14px); }
+.reasoning summary { cursor: pointer; color: #ebd7a8; }
+.reasoning-text { margin-top: .45em; padding: .55em .75em; border-left: 2px solid #b8a77f99; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
 .message-part.character .text { color: var(--SmartThemeQuoteColor, #e6ba80); }
 .speaker {
   color: #ebd7a8;

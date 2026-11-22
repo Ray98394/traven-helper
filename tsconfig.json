@@ -23,6 +23,7 @@
     },
     "moduleDetection": "auto",
     "moduleResolution": "bundler",
+    "rewriteRelativeImportExtensions": true,
     "allowUmdGlobalAccess": true,
     "allowSyntheticDefaultImports": true,
     "strictBindCallApply": true,

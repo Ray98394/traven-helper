@@ -1,9 +1,9 @@
 export type ScenePart = { name: string; expression?: string; text: string; tagged: boolean };
 
-/** 只解析独占一行的标记，避免把正文里的方括号当作角色。 */
+/** 解析行首标记，允许正文紧随标记，同时保留正文中的方括号。 */
 export function splitSceneDialogue(text: string, fallbackName: string, streaming = false): ScenePart[] {
   if (streaming) text = text.replace(/(?:^|\n)\[[^\]\n]{0,80}$/, '');
-  const tag = /^\[(旁白|[^\].\n]{1,40}\.[^\]\n]{1,40})\]\s*$/gm;
+  const tag = /^\[(旁白|[^\].\n]{1,40}\.[^\]\n]{1,40})\][ \t]*/gm;
   const matches = [...text.matchAll(tag)];
   if (!matches.length) return text.trim() ? [{ name: fallbackName, text, tagged: false }] : [];
   const result: ScenePart[] = [];
@@ -18,17 +18,14 @@ export function splitSceneDialogue(text: string, fallbackName: string, streaming
 }
 
 /** 显示层将角色标记中的叙述与引号内台词分开；原始标记仍用于立绘。 */
-export function splitDialogueForDisplay(parts: ScenePart[]): ScenePart[] {
+export function splitDialogueForDisplay(parts: ScenePart[], streaming = false): ScenePart[] {
   return parts.flatMap(part => {
     if (!part.tagged || part.name === '旁白') return [part];
-    const quotes = /“[^”]*”|「[^」]*」|『[^』]*』|"[^"\n]*"/g;
+    const quotes = streaming
+      ? /“[^”]*(?:”|$)|「[^」]*(?:」|$)|『[^』]*(?:』|$)|"[^"\n]*(?:"|$)/g
+      : /“[^”]*”|「[^」]*」|『[^』]*』|"[^"\n]*"/g;
     const matches = [...part.text.matchAll(quotes)];
-    if (!matches.length) {
-      // 旧消息可能不带引号，短句继续按角色台词处理。
-      return part.text.length >= 55 || /\n\s*\n/.test(part.text)
-        ? [{ name: '旁白', text: part.text, tagged: true }]
-        : [part];
-    }
+    if (!matches.length) return [{ name: '旁白', text: part.text, tagged: true }];
     const result: ScenePart[] = [];
     let offset = 0;
     for (const match of matches) {
