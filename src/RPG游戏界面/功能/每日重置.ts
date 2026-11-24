@@ -1,9 +1,10 @@
-import { locationRegions, regionForLocation } from './区域.ts';
+import { regionForLocation } from './区域.ts';
 import { moveCharacter } from './地点成员.ts';
+import { syncPlayerResources } from './玩家属性.ts';
 export const HOME_LOCATION = '玩家的家';
 export const START_DATE = { year: 1, month: 1, date: 1 } as const;
 export type CalendarDate = { year: number; month: number; date: number };
-export type Schedule = { 每周?: Partial<Record<string, string>>; 指定日期?: Record<string, string> };
+export type Schedule = { 每周?: Partial<Record<string, string>>; 指定日期?: Record<string, string>; 随机地点?: string[] };
 export type Schedules = Record<string, Schedule>;
 const readValue = (value: unknown) => Array.isArray(value) ? value[0] : value;
 function setValue(object: Record<string, any>, key: string, value: unknown) {
@@ -35,16 +36,19 @@ export function weekday(date: CalendarDate): string { return ['星期日', '星�
 export function dateKey(date: CalendarDate): string { return `${String(date.year).padStart(4, '0')}-${String(date.month).padStart(2, '0')}-${String(date.date).padStart(2, '0')}`; }
 export function formatDate(date: CalendarDate): string { return `${date.year}年${date.month}月${date.date}日 ${weekday(date)}`; }
 
-/** 解析某天的日程，随机区域只在应用日程时抽取。 */
+/** 解析某天的日程，随机地点只在应用日程时抽取。 */
 export function scheduledLocation(name: string, schedule: Schedule, date: CalendarDate, random: () => number = Math.random): string | undefined {
   const configured = schedule?.指定日期?.[dateKey(date)] ?? schedule?.每周?.[weekday(date)];
   if (typeof configured !== 'string' || !configured.trim()) return undefined;
   const location = configured.trim();
-  if (!location.startsWith('随机.')) return location;
-  const region = location.slice('随机.'.length).trim();
-  const candidates = Object.entries(locationRegions).filter(([, value]) => value === region).map(([place]) => place);
-  if (!region || !candidates.length) {
-    console.warn(`[RPG游戏界面] ${name} 的日程区域无可用地点: ${location}`);
+  if (location.startsWith('随机.')) {
+    console.warn(`[RPG游戏界面] ${name} 的随机日程格式无效: ${location}`);
+    return undefined;
+  }
+  if (location !== '随机') return location;
+  const candidates = schedule.随机地点 ?? [];
+  if (!candidates.length) {
+    console.warn(`[RPG游戏界面] ${name} 的随机地点列表为空`);
     return undefined;
   }
   return candidates[Math.floor(random() * candidates.length)];
@@ -59,6 +63,19 @@ export function advanceDay(stat: Record<string, any>, schedules: Schedules = {},
   if (!currentDate || typeof day !== 'number' || !Number.isSafeInteger(day) || day < 1 || typeof maximum !== 'number' || !Number.isSafeInteger(maximum) || maximum < 0) return false;
   const next = addDays(currentDate, 1);
   if (!next) return false;
+  if (player.attributes && player.health && player.mana && Number.isInteger(player.level)) {
+    syncPlayerResources(player);
+    player.health.current = player.health.max;
+    player.mana.current = player.mana.max;
+  }
+  for (const role of Object.values(stat.characters ?? {})) {
+    const combat = (role as Record<string, any>)?.combat;
+    if (!combat) continue;
+    syncPlayerResources(combat);
+    combat.health.current = combat.health.max;
+    combat.mana.current = combat.mana.max;
+    combat.energy.current = combat.energy.max;
+  }
   setValue(stat.time, 'day', day + 1);
   for (const key of ['year', 'month', 'date'] as const) setValue(stat.time, key, next[key]);
   setValue(player.energy, 'current', maximum);

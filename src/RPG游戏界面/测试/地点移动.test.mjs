@@ -7,6 +7,6 @@ test('前往新地点消耗精力值，精力不足时保留状态', () => {
   assert.equal(travelTo(state, '图书馆'), 'ok');
   assert.deepEqual(state.player, { area: { region: '学院', place: '图书馆' }, energy: { current: 0, max: 4 } });
   const previous = structuredClone(state);
-  assert.equal(travelTo(state, '市场'), 'no_points');
+  assert.equal(travelTo(state, '月神广场'), 'no_points');
   assert.deepEqual(state, previous);
 });

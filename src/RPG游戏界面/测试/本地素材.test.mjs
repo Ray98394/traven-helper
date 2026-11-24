@@ -19,19 +19,19 @@ test('素材按角色、服装和文件名索引，背景按地点切换', () =>
   assert.equal(backgroundForLocation(backgrounds, '未配置'), '');
 });
 
-test('默认表情读取角色根目录，服装表情仍按当前服装选择', () => {
-  const { portraits, defaults } = buildArtworkIndex({
-    './角色立绘/爱丽丝/default.png': '角色默认图',
+test('优先读取当前服装的默认立绘，缺图时回退默认服装', () => {
+  const { portraits } = buildArtworkIndex({
+    './角色立绘/爱丽丝/默认/默认.png': '角色默认图',
     './角色立绘/爱丽丝/工作服/default.png': '工作默认图',
     './角色立绘/爱丽丝/工作服/开心.png': '工作开心图',
     './角色立绘/爱丽丝/便服/开心.png': '便服开心图',
   });
-  const work = expressionsForOutfit(portraits.爱丽丝.工作服, defaults.爱丽丝);
-  const casual = expressionsForOutfit(portraits.爱丽丝.便服, defaults.爱丽丝);
-  assert.equal(portraitForExpression(work), '角色默认图');
-  assert.equal(portraitForExpression(work, 'default'), '角色默认图');
+  const work = expressionsForOutfit(portraits.爱丽丝.工作服, portraits.爱丽丝.默认.default);
+  const casual = expressionsForOutfit(portraits.爱丽丝.便服, portraits.爱丽丝.默认.default);
+  assert.equal(portraitForExpression(work), '工作默认图');
+  assert.equal(portraitForExpression(work, 'default'), '工作默认图');
   assert.equal(portraitForExpression(work, '开心'), '工作开心图');
   assert.equal(portraitForExpression(casual, '开心'), '便服开心图');
   assert.equal(portraitForExpression(casual, '不存在'), '角色默认图');
-  assert.equal(portraitForExpression(expressionsForOutfit(portraits.爱丽丝.工作服), 'default'), '');
+  assert.equal(portraitForExpression(expressionsForOutfit(portraits.爱丽丝.工作服), 'default'), '工作默认图');
 });

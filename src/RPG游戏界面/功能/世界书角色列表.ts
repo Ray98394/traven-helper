@@ -2,19 +2,18 @@ import { parse, stringify } from 'yaml';
 import type { Schedules } from './每日重置';
 
 export type Outfit = { description: string; folder: string };
-export type RosterRole = { folder: string; confessionLocation?: string; appearance?: string; defaultOutfit?: string; outfits?: Record<string, Outfit>; outfitsByLocation?: Record<string, string>; defaultState?: string; statesByLocation?: Record<string, string>; states?: Record<string, { outfit?: string; behavior?: string }>; affectionBehaviors?: Record<string, string> };
+export type RosterRole = { folder: string; confessionLocation?: string; appearance?: string; outfits?: Record<string, Outfit>; statesByLocation?: Record<string, string>; states?: Record<string, { outfit?: string; behavior?: string }>; affectionBehaviors?: Record<string, string> };
 type RoleState = { 'state': string; source?: '自动' | '事件' };
 
-/** 索引只关联角色与详情；其他信息以详情条目的配置为唯一来源。 */
-export function composeCharacterRoster(indexContent: string, details: Record<string, string>): string {
+/** 从角色索引中读取配置和基本信息。 */
+export function composeCharacterRoster(indexContent: string): string {
   const index = parse(indexContent)?.角色索引;
   if (!index || typeof index !== 'object' || Array.isArray(index)) throw new Error('缺少角色索引');
   const roles: Record<string, unknown> = {};
-  for (const [name, entryName] of Object.entries(index)) {
-    if (typeof entryName !== 'string' || !details[entryName]) throw new Error(`缺少角色详情: ${name}`);
-    const detail = parse(details[entryName])?.[name];
-    if (!detail || typeof detail !== 'object' || Array.isArray(detail) || !detail.配置) throw new Error(`角色详情配置无效: ${name}`);
-    roles[name] = { ...detail.配置, info: detail.配置.简介 };
+  for (const [name, value] of Object.entries(index)) {
+    const detail = value as any;
+    if (!detail || typeof detail !== 'object' || Array.isArray(detail) || !detail.配置 || typeof detail.配置 !== 'object' || Array.isArray(detail.配置)) throw new Error(`角色索引配置无效: ${name}`);
+    roles[name] = { ...detail.配置, 外貌: detail.基本信息?.外貌 ?? detail.配置.外貌, info: [detail.基本信息?.身份, detail.基本信息?.简介].filter(item => typeof item === 'string' && item.trim()).join(' ') || detail.配置.简介 };
   }
   return stringify({ 角色列表: roles });
 }
@@ -27,7 +26,7 @@ export function syncCharacterStates(stat: Record<string, any>, roles: Record<str
     const states = role.states ?? {};
     const old = stat.states[name] as RoleState | undefined;
     if (old?.source === '事件' && Object.hasOwn(states, old['state'])) continue;
-    const chosen = [role.statesByLocation?.[locations[name]], role.defaultState].find(key => typeof key === 'string' && Object.hasOwn(states, key));
+    const chosen = [role.statesByLocation?.[locations[name]], '默认'].find(key => typeof key === 'string' && Object.hasOwn(states, key));
     if (!chosen) continue;
     if (old?.['state'] !== chosen || old?.source !== '自动') {
       stat.states[name] = { 'state': chosen, source: '自动' };
@@ -49,7 +48,8 @@ const safeFolder = (folder: string) => !!folder && !/[\\/:]/.test(folder) && ![.
 /** 事件指定优先；无效指定回退至地点规则和默认服装。 */
 export function selectOutfit(role: RosterRole, location: string, override?: string, currentState?: string): { name: string; description: string; folder: string } | undefined {
   const outfits = role.outfits ?? {};
-  const name = [override, currentState && role.states?.[currentState]?.outfit, role.outfitsByLocation?.[location], role.defaultOutfit].find(key => typeof key === 'string' && Object.hasOwn(outfits, key));
+  const state = currentState && role.states?.[currentState] ? currentState : role.statesByLocation?.[location] ?? '默认';
+  const name = [override, role.states?.[state]?.outfit, '默认'].find(key => typeof key === 'string' && Object.hasOwn(outfits, key));
   return name ? { name, ...outfits[name] } : undefined;
 }
 
@@ -67,13 +67,14 @@ export function appearancePrompt(roles: Record<string, RosterRole>, playerLocati
   const descriptions = Object.entries(roles).flatMap(([name, role]) => {
     if (locations[name] !== playerLocation) return [];
     const currentState = states[name]?.['state'];
-    const outfit = selectOutfit(role, locations[name], overrides[name], currentState);
-    const state = currentState ? role.states?.[currentState] : undefined;
+    const effectiveState = currentState && role.states?.[currentState] ? currentState : role.statesByLocation?.[locations[name]] ?? '默认';
+    const outfit = selectOutfit(role, locations[name], overrides[name], effectiveState);
+    const state = role.states?.[effectiveState];
     const stage = affectionStages[name];
     const affectionBehavior = stage ? role.affectionBehaviors?.[stage] : undefined;
-    return role.appearance || outfit?.description || state?.behavior || affectionBehavior ? [{ 角色: name, 外貌: role.appearance || undefined, 当前状态: state ? currentState : undefined, 状态表现: state?.behavior || undefined, 服装: outfit?.description || undefined, 好感度阶段: affectionBehavior ? stage : undefined, 阶段表现: affectionBehavior || undefined }] : [];
+    return outfit?.description || state?.behavior || affectionBehavior ? [{ 角色: name, 当前状态: state ? effectiveState : undefined, 状态表现: state?.behavior || undefined, 服装: outfit?.description || undefined, 好感度阶段: affectionBehavior ? stage : undefined, 阶段表现: affectionBehavior || undefined }] : [];
   });
-  return descriptions.length ? `在场角色当前外貌、状态与关系阶段，以此为准；阶段表现结合角色性格和当前场合自然演绎：\n${JSON.stringify(descriptions)}` : '';
+  return descriptions.length ? `在场角色当前服装、状态与关系阶段，以此为准；阶段表现结合角色性格和当前场合自然演绎：\n${JSON.stringify(descriptions)}` : '';
 }
 
 /** 日程从同一份角色列表读取；指定日期优先于每周安排。 */
@@ -91,7 +92,10 @@ export function parseRoleSchedules(content: string): Schedules {
     const map = (value: unknown): Record<string, string> => value && typeof value === 'object' && !Array.isArray(value)
       ? Object.fromEntries(Object.entries(value).filter(([, item]) => typeof item === 'string' && item.trim())) as Record<string, string>
       : {};
-    schedules[name] = { 每周: map(raw.每周), 指定日期: map(raw.指定日期) };
+    const locations = Array.isArray(raw.随机地点)
+      ? [...new Set(raw.随机地点.filter((item): item is string => typeof item === 'string' && !!item.trim()).map(item => item.trim()))]
+      : [];
+    schedules[name] = { 每周: map(raw.每周), 指定日期: map(raw.指定日期), 随机地点: locations };
   }
   return schedules;
 }
@@ -120,18 +124,17 @@ export function parseSceneRoster(content: string): Record<string, RosterRole> {
     for (const [outfitName, item] of Object.entries(variants)) {
       if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
       const data = item as Record<string, unknown>;
-      const outfitFolder = typeof data.立绘目录 === 'string' && data.立绘目录.trim() ? data.立绘目录.trim() : folder;
+      const outfitFolder = outfitName;
       if (!safeFolder(outfitFolder)) { console.warn(`[RPG游戏界面] 跳过无效服装立绘目录: ${name}/${outfitName}`); continue; }
       outfits[outfitName] = { folder: outfitFolder, description: typeof data.描述 === 'string' ? data.描述.trim() : '' };
     }
-    const mapping = rawOutfits.地点映射 && typeof rawOutfits.地点映射 === 'object' && !Array.isArray(rawOutfits.地点映射) ? rawOutfits.地点映射 : {};
     const stateConfig = raw.状态 && typeof raw.状态 === 'object' && !Array.isArray(raw.状态) ? raw.状态 : {};
     const stateEntries = stateConfig.可用状态 && typeof stateConfig.可用状态 === 'object' && !Array.isArray(stateConfig.可用状态) ? stateConfig.可用状态 : {};
     const states = Object.fromEntries(Object.entries(stateEntries).filter(([, value]) => value && typeof value === 'object' && !Array.isArray(value)).map(([key, value]) => { const v = value as Record<string, unknown>; return [key, { outfit: typeof v.服装 === 'string' ? v.服装 : undefined, behavior: typeof v.表现 === 'string' ? v.表现 : undefined }]; }));
     const stateMap = stateConfig.地点映射 && typeof stateConfig.地点映射 === 'object' && !Array.isArray(stateConfig.地点映射) ? stateConfig.地点映射 : {};
     const rawBehaviors = raw.好感度阶段表现 && typeof raw.好感度阶段表现 === 'object' && !Array.isArray(raw.好感度阶段表现) ? raw.好感度阶段表现 : {};
     const affectionBehaviors = Object.fromEntries(Object.entries(rawBehaviors).filter(([, item]) => typeof item === 'string' && item.trim())) as Record<string, string>;
-    roles[name] = { folder, ...(confessionLocation ? { confessionLocation } : {}), appearance: typeof raw.外貌 === 'string' ? raw.外貌.trim() : '', defaultOutfit: typeof rawOutfits.默认 === 'string' ? rawOutfits.默认 : undefined, outfits, outfitsByLocation: Object.fromEntries(Object.entries(mapping).filter(([, item]) => typeof item === 'string')) as Record<string, string>, defaultState: typeof stateConfig.默认 === 'string' ? stateConfig.默认 : undefined, states, statesByLocation: Object.fromEntries(Object.entries(stateMap).filter(([, item]) => typeof item === 'string')) as Record<string, string>, affectionBehaviors };
+    roles[name] = { folder, ...(confessionLocation ? { confessionLocation } : {}), appearance: typeof raw.外貌 === 'string' ? raw.外貌.trim() : '', outfits, states, statesByLocation: Object.fromEntries(Object.entries(stateMap).filter(([, item]) => typeof item === 'string')) as Record<string, string>, affectionBehaviors };
   }
   return roles;
 }

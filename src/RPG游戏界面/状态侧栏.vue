@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue';
 import mapImage from './维尔斯特地图.png?url';
+import { battleLocations } from './功能/区域';
 
 const props = defineProps<{
   playerLocation: string;
@@ -8,13 +9,21 @@ const props = defineProps<{
   day: number | null;
   date: string;
   actionPoints: string;
+  health: string;
+  mana: string;
+  level: string;
+  armor: string;
+  attributes: { label: string; value: string }[];
+  magic: { label: string; value: string }[];
+  money: string;
   userName: string;
   resting: boolean;
   traveling: boolean;
-  characters: { name: string; affection: number; stage: string; location: string }[];
+  characters: { name: string; affection: number; stage: string; location: string; combat?: { level: number; attributes: { dexterity: number; constitution: number; intelligence: number }; magic: Record<string, { proficiency: number }>; health: { current: number; max: number }; mana: { current: number; max: number }; energy: { current: number; max: number } } }[];
   characterLocations: string[];
 }>();
 const emit = defineEmits<{ rest: []; travel: [destination: string] }>();
+const statusTab = ref<'player' | 'characters'>('player');
 
 const locations = computed(() => [
   { name: '弗尔根斯学院', x: 53.0, y: 44.5 }, { name: '卡登斯学院', x: 42.5, y: 42.2 },
@@ -113,28 +122,45 @@ const display = (value: string | undefined) => value === '玩家的家' || value
       <button class="open-map" @click="openMap">✧ 打开地图</button>
     </section>
     <div class="status-grid">
-      <section class="player-panel" aria-label="玩家状态">
-        <div class="section-title"><span>✦ 玩家状态</span></div>
+      <div class="status-tabs" role="tablist" aria-label="状态分类">
+        <button id="player-status-tab" role="tab" :aria-selected="statusTab === 'player'" aria-controls="player-status-panel" @click="statusTab = 'player'">✦ 玩家状态</button>
+        <button id="character-status-tab" role="tab" :aria-selected="statusTab === 'characters'" aria-controls="character-status-panel" @click="statusTab = 'characters'">♡ 角色状态</button>
+      </div>
+      <section v-show="statusTab === 'player'" id="player-status-panel" class="player-panel" role="tabpanel" aria-labelledby="player-status-tab">
         <dl>
           <div><dt>所在区域</dt><dd>{{ playerRegion }}</dd></div>
           <div><dt>所在地点</dt><dd>{{ display(playerLocation) }}</dd></div>
-          <div><dt>血量</dt><dd>—</dd></div>
-          <div><dt>魔力</dt><dd>—</dd></div>
+          <div><dt>血量</dt><dd>{{ health }}</dd></div>
+          <div><dt>魔力</dt><dd>{{ mana }}</dd></div>
           <div><dt>精力值</dt><dd>{{ actionPoints }}</dd></div>
-          <div><dt>等级</dt><dd>—</dd></div>
+          <div><dt>金币</dt><dd>{{ money }}</dd></div>
+          <div><dt>等级</dt><dd>{{ level }}</dd></div>
+          <div><dt>护甲</dt><dd>{{ armor }}</dd></div>
+          <div v-for="attribute in attributes" :key="attribute.label"><dt>{{ attribute.label }}</dt><dd>{{ attribute.value }}</dd></div>
+          <div v-for="school in magic" :key="school.label"><dt>{{ school.label }}</dt><dd>{{ school.value }}</dd></div>
           <div><dt>装备</dt><dd>—</dd></div>
         </dl>
         <button class="backpack" disabled title="背包功能尚未开放">背包 <span>暂未开放</span></button>
-        <button class="rest-button" :disabled="resting" @click="emit('rest')">休息至次日</button>
+        <button class="rest-button" :disabled="resting" @click="emit('rest')">{{ resting ? '正在整理当天经历…' : '休息至次日' }}</button>
       </section>
-      <section class="characters" aria-label="角色状态">
-        <div class="section-title"><span>♡ 角色状态</span></div>
+      <section v-show="statusTab === 'characters'" id="character-status-panel" class="characters" role="tabpanel" aria-labelledby="character-status-tab">
         <div class="character-list" tabindex="0" aria-label="角色状态列表">
           <div v-if="!characters.length" class="empty">—</div>
           <article v-for="character in characters" :key="character.name" class="character">
             <div class="character-name">{{ character.name }} <span>♡ {{ character.affection }}</span></div>
             <div class="character-location">好感阶段 <b>{{ character.stage }}</b></div>
             <div class="character-location">所在地点 <b>{{ display(character.location) }}</b></div>
+            <details v-if="character.combat" class="combat-details">
+              <summary>战斗属性</summary>
+              <div class="character-location">等级 <b>{{ character.combat.level }}</b></div>
+              <div class="character-location">血量 <b>{{ character.combat.health.current }} / {{ character.combat.health.max }}</b></div>
+              <div class="character-location">魔力 <b>{{ character.combat.mana.current }} / {{ character.combat.mana.max }}</b></div>
+              <div class="character-location">精力 <b>{{ character.combat.energy.current }} / {{ character.combat.energy.max }}</b></div>
+              <div class="character-location">敏捷 <b>{{ character.combat.attributes.dexterity }}</b></div>
+              <div class="character-location">体质 <b>{{ character.combat.attributes.constitution }}</b></div>
+              <div class="character-location">智力 <b>{{ character.combat.attributes.intelligence }}</b></div>
+              <div v-for="(school, name) in character.combat.magic" :key="name" class="character-location">{{ name }}魔法 <b>{{ school.proficiency }} 级</b></div>
+            </details>
           </article>
         </div>
       </section>
@@ -143,12 +169,12 @@ const display = (value: string | undefined) => value === '玩家的家' || value
   <Teleport v-if="mapHost" :to="mapHost">
     <div v-if="mapOpen" class="map-overlay" @click.self="closeMap" @keydown.esc.stop="closeMap">
       <section class="map-dialog" role="dialog" aria-modal="true" aria-label="地图">
-        <header class="map-dialog-header"><strong>✧ 月湖地区地图</strong><div class="map-legend"><span><i class="legend-dot occupied"></i>有角色</span><span><i class="legend-dot"></i>无角色</span></div><div><button class="expand-map" @click="resetMap">重置地图</button><button ref="closeButton" class="map-close" aria-label="关闭地图" @click="closeMap">×</button></div></header>
+        <header class="map-dialog-header"><strong>✧ 月湖地区地图</strong><div class="map-legend"><span><i class="legend-dot battle"></i>战斗区域</span><span><i class="legend-dot occupied"></i>有角色</span><span><i class="legend-dot"></i>无角色</span></div><div><button class="expand-map" @click="resetMap">重置地图</button><button ref="closeButton" class="map-close" aria-label="关闭地图" @click="closeMap">×</button></div></header>
         <div class="map-scroll">
           <div class="map-frame" :class="{ dragging }" @wheel.prevent="zoomMap" @pointerdown="startDrag" @pointermove="moveDrag" @pointerup="endDrag" @pointercancel="endDrag" @lostpointercapture="endDrag">
             <div class="map-content" :style="{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})` }">
               <img :src="mapImage" alt="月湖地区地图" />
-              <button v-for="(location, index) in locations" :key="location.name" class="marker" :class="{ selected: selected === location.name, occupied: occupiedLocations.has(location.name), 'edge-right': location.x > 80 }" :style="{ left: `${location.x}%`, top: `${location.y}%` }" :aria-label="`${index + 1} ${location.name}，${occupiedLocations.has(location.name) ? '有角色' : '无角色'}`" @click="selectLocation(location.name)"><svg class="marker-icon" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="4" /></svg><span class="marker-label">{{ location.name }}</span></button>
+              <button v-for="(location, index) in locations" :key="location.name" class="marker" :class="{ selected: selected === location.name, occupied: occupiedLocations.has(location.name), battle: battleLocations.has(location.name), 'edge-right': location.x > 80 }" :style="{ left: `${location.x}%`, top: `${location.y}%` }" :aria-label="`${index + 1} ${location.name}，${battleLocations.has(location.name) ? '战斗区域，' : ''}${occupiedLocations.has(location.name) ? '有角色' : '无角色'}`" @click="selectLocation(location.name)"><svg class="marker-icon" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="4" /></svg><span class="marker-label">{{ location.name }}</span></button>
             </div>
           </div>
         </div>
@@ -159,7 +185,7 @@ const display = (value: string | undefined) => value === '玩家的家' || value
 </template>
 
 <style scoped>
-.sidebar { position:absolute; z-index:4; inset:0 auto 0 0; width:var(--sidebar-width); padding:clamp(10px,1vw,18px); overflow-y:auto; color:#e9e0d0; background:linear-gradient(160deg,#17283bf7,#0b1523fa); border-right:1px solid #c9ae7866; font-size:12px; }
+.sidebar { position:absolute; z-index:4; inset:0 auto 0 0; display:flex; flex-direction:column; width:var(--sidebar-width); padding:clamp(10px,1vw,18px); overflow-y:auto; color:#e9e0d0; background:linear-gradient(160deg,#17283bf7,#0b1523fa); border-right:1px solid #c9ae7866; font-size:14px; }
 .heading { display:flex; align-items:center; justify-content:space-between; gap:8px; padding-bottom:10px; }
 .eyebrow { font-size:9px; color:#af9e80; letter-spacing:.15em; }
 h2 { margin:3px 0 0; font-size:20px; font-weight:500; letter-spacing:.2em; color:#efdfbb; }
@@ -189,6 +215,8 @@ h2 { margin:3px 0 0; font-size:20px; font-weight:500; letter-spacing:.2em; color
 .marker-icon { display:block; width:10px; height:10px; overflow:visible; pointer-events:none; filter:drop-shadow(0 1px 2px #102c13cc); }
 .marker-icon circle { fill:#35b956; stroke:#e1ffdf; stroke-width:1.2; }
 .marker.occupied .marker-icon circle { fill:#318fe9; }
+.marker.battle .marker-icon circle { fill:#e44646; stroke:#ffe0d8; }
+.legend-dot.battle { background:#e44646; }
 .map-frame .marker:hover,.map-frame .marker:focus-visible,.map-frame .marker.selected { z-index:2; outline:none; }
 .marker:hover .marker-icon circle,.marker:focus-visible .marker-icon circle,.marker.selected .marker-icon circle { stroke:#f8d687; stroke-width:2; }
 .marker-label { position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(-50%); visibility:hidden; opacity:0; padding:4px 7px; border:1px solid #9dbd8d; border-radius:3px; background:#142a20ed; color:#fff; font-size:12px; line-height:1.3; white-space:nowrap; pointer-events:none; }
@@ -196,17 +224,23 @@ h2 { margin:3px 0 0; font-size:20px; font-weight:500; letter-spacing:.2em; color
 .marker:hover .marker-label,.marker:focus-visible .marker-label { visibility:visible; opacity:1; }
 .map-caption { display:flex; align-items:center; gap:8px; padding:8px 2px 1px; color:#e5d5b5; } .map-caption select { flex:1; min-width:0; color:#e5d5b5; background:#111f30; border:1px solid #b49a6d55; border-radius:3px; padding:3px; font:inherit; }
 .travel-button { flex:none; padding:4px 8px; color:#fff1d0; background:#263d55; border:1px solid #c4a777; border-radius:3px; font:inherit; cursor:pointer; } .travel-button:hover:not(:disabled) { background:#3b5771; } .travel-button:disabled { color:#9ea9b3; background:#26323d; border-color:#62707c; cursor:default; }
-.status-grid { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; margin-top:8px; }
-.player-panel,.characters { padding:10px; min-width:0; }
-dl { margin:10px 0; } dl div { display:flex; justify-content:space-between; gap:6px; padding:5px 0; border-bottom:1px solid #c9b99417; } dt { color:#aeb9c4; } dd { margin:0; text-align:right; overflow-wrap:anywhere; }
-.backpack { width:100%; margin-top:4px; opacity:.55; } .backpack span { font-size:10px; }
+.status-grid { display:flex; flex:1 0 auto; flex-direction:column; gap:8px; margin-top:8px; }
+.status-tabs { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+.status-tabs button { padding:8px 5px; border:1px solid #b49a6d66; border-radius:4px; color:#b8c3cb; background:#0b1624bb; font:inherit; cursor:pointer; }
+.status-tabs button[aria-selected="true"] { color:#fff0cd; background:#263d55; border-color:#c4a777; }
+.status-tabs button:hover { color:#fff0cd; background:#304960; }
+.status-tabs button:focus-visible { outline:2px solid #f4d69b; outline-offset:2px; }
+.player-panel,.characters { flex:1; display:flex; flex-direction:column; padding:10px; min-width:0; }
+dl { display:flex; flex:1; flex-direction:column; margin:10px 0; } dl div { display:flex; flex:1; justify-content:space-between; align-items:center; gap:6px; min-height:30px; padding:5px 0; border-bottom:1px solid #c9b99417; } dt { color:#aeb9c4; } dd { margin:0; text-align:right; overflow-wrap:anywhere; }
+.backpack { width:100%; margin-top:auto; opacity:.55; } .backpack span { font-size:10px; }
 .rest-button { width:100%; margin-top:6px; padding:7px 8px; color:#fff1d0; background:#263d55; border:1px solid #c4a777; border-radius:4px; font:inherit; cursor:pointer; }
 .rest-button:hover:not(:disabled) { color:#fff; background:#3b5771; }
 .rest-button:focus-visible { outline:2px solid #f4d69b; outline-offset:2px; }
 .rest-button:disabled { color:#abb5be; background:#26323d; border-color:#62707c; cursor:wait; }
 .character { padding:9px 0; border-bottom:1px solid #c9b99428; } .character-name { display:flex; justify-content:space-between; gap:4px; color:#eadbbf; } .character-name span { color:#dcbf92; white-space:nowrap; }
 .character-list { max-height:240px; overflow-y:auto; overscroll-behavior:contain; }
-.character-location { display:flex; justify-content:space-between; gap:5px; margin-top:7px; color:#9eacb9; font-size:11px; } .character-location b { color:#d4d9df; font-weight:400; text-align:right; overflow-wrap:anywhere; }
+.character-location { display:flex; justify-content:space-between; gap:5px; margin-top:7px; color:#9eacb9; font-size:13px; } .character-location b { color:#d4d9df; font-weight:400; text-align:right; overflow-wrap:anywhere; }
+.combat-details { margin-top:8px; color:#d8c49b; } .combat-details summary { cursor:pointer; }
 .empty { padding:15px 0; color:#9eacb9; }
 @media (max-width:850px) { .sidebar { padding:8px; } }
 </style>

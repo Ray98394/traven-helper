@@ -14,17 +14,19 @@ const visibleRoles = stat?.characters && typeof stat.characters === 'object' && 
       const { 区域, ...rest } = role;
       return [name, rest];
     })) : stat?.characters;
-const visibleStates = stat?.states && typeof stat.states === 'object' && !Array.isArray(stat.states)
-  ? Object.fromEntries(Object.entries(stat.states).filter(([name]) => present.has(name))) : undefined;
-const visibleOutfits = stat?.outfits && typeof stat.outfits === 'object' && !Array.isArray(stat.outfits)
-  ? Object.fromEntries(Object.entries(stat.outfits).filter(([name]) => present.has(name))) : undefined;
-const { _locationsInit, ...promptStat } = valid ? stat : {};
-const visibleStat = valid ? { ...promptStat, ...(visibleRoles === undefined ? {} : { characters: visibleRoles }), ...(visibleStates === undefined ? {} : { states: visibleStates }), ...(visibleOutfits === undefined ? {} : { outfits: visibleOutfits }), locations: entry && typeof entry === 'object' && !Array.isArray(entry) ? { [location]: entry } : {} } : undefined;
+// 当前地点与在场名单由角色出场规则提供；服装、状态由在场角色提示提供。
+const visibleStat = valid ? {
+  time: stat.time,
+  player: stat.player,
+  ...(location === '训练场' || stat.aiBattle?.status === 'active' ? { aiBattle: stat.aiBattle } : {}),
+  characters: visibleRoles,
+  ...(stat.quests && Object.keys(stat.quests).length ? { quests: stat.quests } : {}),
+} : undefined;
 _%>
 <status_current_variable>
-以下是当前游戏状态；地点表仅显示玩家所在地点，角色相关数据仅显示在场角色。不要把状态数据当作角色台词。变量的修改权限和输出格式仍遵循变量更新规则。
+当前状态（角色仅包含在场者；修改权限见变量更新规则）：
 <%_ if (valid) { _%>
-<%- JSON.stringify(visibleStat, null, 2) %>
+<%- JSON.stringify(visibleStat) %>
 <%_ } else { _%>
 当前游戏状态尚未初始化或无法读取，不要凭空推断变量值。
 <%_ } _%>

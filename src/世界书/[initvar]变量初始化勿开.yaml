@@ -4,6 +4,25 @@ time:
   month: 9
   date: 5
 player:
+  level: 1
+  attributes:
+    dexterity: 10
+    constitution: 10
+    intelligence: 10
+  armor:
+    base: 3
+    equipment: 0
+  health:
+    current: 10
+    max: 10
+  mana:
+    current: 10
+    max: 10
+  magic:
+    结晶: { proficiency: 0, progress: 0, learnedSpells: [] }
+    爆裂: { proficiency: 0, progress: 0, learnedSpells: [] }
+    奥秘: { proficiency: 0, progress: 0, learnedSpells: [] }
+    纹章: { proficiency: 0, progress: 0, learnedSpells: [] }
   area:
     region: 城镇
     place: 玩家的家
@@ -12,18 +31,65 @@ player:
     max: 4
   party: []
 locations: {}
+_sceneStart: 0
+aiBattle:
+  status: inactive
+  location: ''
+  round: 0
+  defending: false
+  startHealth: null
+  order: []
+  enemies: []
+tavernOrders:
+  day: 0
+  purchases: {}
 characters:
   蕾拉妮:
     known: true
     affection: 45
-    stage: 亲近
+    stage: 熟悉
     confessed: false
+    combat:
+      level: 1
+      attributes:
+        dexterity: 10
+        constitution: 10
+        intelligence: 10
+      health:
+        current: 10
+        max: 10
+      mana:
+        current: 10
+        max: 10
+      energy:
+        current: 4
+        max: 4
+      magic:
+        结晶: { proficiency: 0, progress: 0, learnedSpells: [] }
+        爆裂: { proficiency: 0, progress: 0, learnedSpells: [] }
+        奥秘: { proficiency: 0, progress: 0, learnedSpells: [] }
+        纹章: { proficiency: 0, progress: 0, learnedSpells: [] }
   艾琳:
     known: false
     affection: 0
     stage: 陌生
     confessed: false
   爱丽丝:
+    known: false
+    affection: 0
+    stage: 陌生
+    confessed: false
+  莉娜:
+    known: false
+    affection: 0
+    stage: 陌生
+    confessed: false
+  艾尔莎:
+    known: false
+    affection: 0
+    stage: 陌生
+    confessed: false
+  薇奥拉:
     known: false
     affection: 0
     stage: 陌生

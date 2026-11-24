@@ -1,6 +1,7 @@
 import { parse } from 'yaml';
 import { getAffectionStage } from '../../变量结构/好感阶段';
 import { characterLocations } from './地点成员.ts';
+import { battleLocations } from './区域.ts';
 
 type Actor = { name: string; affection: number | null; personality: string; state: string; known: boolean; stage: string };
 export type ArrivalScene = { location: string; actors: Actor[] };
@@ -18,7 +19,7 @@ export function currentScenePrompt(stat: Record<string, any>): string {
   const present = Array.isArray(members) ? [...new Set(members.filter((name: unknown): name is string => typeof name === 'string' && !!name.trim()))] : [];
   return [
     'The live location below overrides the setting and speakers in previous messages. If the location has changed, the previous scene has ended: begin or continue the current scene here, not the old conversation. Only configured characters in present may act or speak here in person; absent characters may be mentioned but cannot appear without a location change. Remote communication requires an established means. Background NPCs are allowed. Presence does not require dialogue.',
-    'An unknown character may be named in narration or by others; keep using their real name in speaker tags. The interface masks the speaker label until the player learns their identity through an introduction. Do not control the player.',
+    'For characters not yet recognized by the player, narration uses visible traits or role, not their name, until an explicit introduction lets the player identify them. Other characters may naturally use names they know. Speaker tags always use real names for rendering and do not establish player knowledge. Do not control the player.',
     JSON.stringify({ location, present }),
   ].join('\n');
 }
@@ -41,7 +42,7 @@ export function buildArrivalScene(stat: Record<string, any>, rosterContent: stri
   for (const [name, place] of Object.entries(locations)) {
     const raw = stat.characters[name];
     const role = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
-    if (place !== location) continue;
+    if (place !== location || !Object.hasOwn(roster, name)) continue;
     const rawInfo = (roster as Record<string, unknown>)[name];
     const info = rawInfo && typeof rawInfo === 'object' && !Array.isArray(rawInfo) ? rawInfo as Record<string, unknown> : {};
     const n = unwrap(role.affection);
@@ -52,13 +53,24 @@ export function buildArrivalScene(stat: Record<string, any>, rosterContent: stri
 }
 
 export function arrivalPrompt(scene: ArrivalScene): string {
-  const present = scene.actors.length
-    ? scene.actors.map(actor => ({ 姓名: actor.name, 玩家是否认识: actor.known, 性格与设定: actor.personality || '依已有角色设定', 当前状态: actor.state || '未设置', 好感度: actor.affection, 好感阶段: actor.stage }))
-    : [];
+  const present = scene.actors.map(actor => ({ 姓名: actor.name, 玩家是否认识: actor.known, 当前状态: actor.state || '默认', 好感阶段: actor.stage }));
   return [
-    'The player has left the previous scene and just arrived at the location below. Start a new scene at this location now; do not continue the previous scene or its dialogue. Describe the environment and what each listed character is doing. Based on personality, relationship stage and context, decide naturally whether each approaches; do not force everyone to speak.',
-    'An unrecognized character is a stranger. Conversation alone does not establish identity: update 是否认识 only after a self-introduction or a clear introduction by someone else. Names may appear in narration and conversation.',
-    'Follow the live location constraints. Do not invent the arrival of configured characters; anonymous background NPCs are allowed. Do not decide the player’s actions or words, move the player again, or deduct action points. Put each spoken line on its own line as [角色名.表情] “台词”. Begin descriptions, including character actions, with [旁白] on the same line as the text; the tag does not need a separate line.',
-    JSON.stringify({ 地点: scene.location, 在场角色: present }),
+    `以旁白描写当前地点：${scene.location}，参考当前地点条目的场地描述。`,
+    ...(present.length ? [`在场特殊角色：${JSON.stringify(present)}。`] : []),
+    ...(battleLocations.has(scene.location) ? ['地点规则：玩家可点击消息框上方的开始战斗按钮进入切磋；未点击时不开始战斗。'] : []),
   ].join('\n');
+}
+
+/** 路人只在入场时、无特殊角色且不属于战斗地点时生成。 */
+export function shouldGeneratePasserby(scene: ArrivalScene): boolean {
+  return scene.actors.length === 0 && !battleLocations.has(scene.location);
+}
+
+/** 把界面提示放在变量更新块之前，确保更新块仍位于正文末尾。 */
+export function appendBattleArrivalHint(message: string, location: string): string {
+  if (!battleLocations.has(location) || !message.trim()) return message;
+  const hint = '[旁白] 【操作提示】点击消息框上方的“开始战斗”进入切磋；战斗中输入“攻击”或“防御”。';
+  if (message.includes(hint)) return message;
+  const update = message.search(/<UpdateVariable(?:\s[^>]*)?>/i);
+  return update < 0 ? `${message.trimEnd()}\n\n${hint}` : `${message.slice(0, update).trimEnd()}\n\n${hint}\n\n${message.slice(update)}`;
 }

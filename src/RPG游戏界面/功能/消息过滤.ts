@@ -1,4 +1,8 @@
 /** 只影响 RPG 聊天区的展示，不修改原始消息或 MVU 的更新数据。 */
+export function isGeneratingPlaceholder(text: string, isUser: boolean | undefined, isLatest: boolean, generating: boolean): boolean {
+  return generating && isLatest && !isUser && /^(?:\.{3}|…)$/.test(text.trim());
+}
+
 export function narrativeOnly(text: string): string {
   const blocks = ['UpdateVariable', 'Update', 'Analysis', 'JSONPatch', 'think', 'thinking', 'reasoning'];
   let result = text;

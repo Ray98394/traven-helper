@@ -6,7 +6,29 @@ registerHooks({
     return next(specifier.endsWith('/好感阶段') ? `${specifier}.ts` : specifier, context);
   },
 });
-const { arrivalPrompt, buildArrivalScene, currentScenePrompt } = await import('../功能/地点出场.ts');
+const { appendBattleArrivalHint, arrivalPrompt, buildArrivalScene, currentScenePrompt, shouldGeneratePasserby } = await import('../功能/地点出场.ts');
+
+test('战斗区域入场提示放在正文之后、变量更新之前，其他地点不变', () => {
+  const original = '[旁白] 训练场。\n<UpdateVariable><JSONPatch>[]</JSONPatch></UpdateVariable>';
+  const result = appendBattleArrivalHint(original, '训练场');
+  assert.match(result, /训练场。\n\n\[旁白\] 【操作提示】/);
+  assert.match(result, /点击消息框上方的“开始战斗”/);
+  assert.doesNotMatch(result, /【战斗规则】/);
+  assert.ok(result.indexOf('【操作提示】') < result.indexOf('<UpdateVariable>'));
+  assert.equal(appendBattleArrivalHint(result, '训练场'), result);
+  assert.equal(appendBattleArrivalHint(original, '图书馆'), original);
+  assert.equal(appendBattleArrivalHint('', '训练场'), '');
+});
+
+test('仅在进入训练场时简短介绍场地和玩法', () => {
+  const training = arrivalPrompt({ location: '训练场', actors: [] });
+  assert.match(training, /地点规则：/);
+  assert.doesNotMatch(training, /在场特殊角色/);
+  assert.equal(shouldGeneratePasserby({ location: '训练场', actors: [] }), false);
+  const library = arrivalPrompt({ location: '图书馆', actors: [] });
+  assert.doesNotMatch(library, /地点规则|在场特殊角色/);
+  assert.equal(shouldGeneratePasserby({ location: '图书馆', actors: [] }), true);
+});
 
 const roster = `角色列表:
   蕾拉妮:
@@ -29,16 +51,22 @@ test('仅将同一地点的角色、设定和好感阶段交给 AI', () => {
     ['蕾拉妮'],
   );
   const prompt = arrivalPrompt(scene);
-  assert.match(prompt, /傲娇但体贴/);
+  assert.match(prompt, /在场特殊角色/);
   assert.match(prompt, /特别在意/);
   assert.doesNotMatch(prompt, /艾琳/);
-  assert.match(prompt, /do not force everyone to speak/);
+  assert.equal(shouldGeneratePasserby(scene), false);
 });
 test('无在场角色时明确不虚构攻略角色，变量未初始化时报错', () => {
   const scene = buildArrivalScene({ player: { area: { region: '湖泊', place: '湖岸边' } }, characters: {} }, roster);
   assert.deepEqual(scene.actors, []);
-  assert.match(arrivalPrompt(scene), /Do not invent the arrival of configured characters/);
+  assert.doesNotMatch(arrivalPrompt(scene), /在场特殊角色/);
   assert.throws(() => buildArrivalScene({ player: { area: { region: '未知', place: '未知' } } }, roster));
+});
+test('只把角色索引中配置的人物视为特殊角色', () => {
+  const stat = { player: { area: { place: '图书馆' } }, locations: { 图书馆: { present: ['临时路人'] } }, characters: {} };
+  const scene = buildArrivalScene(stat, roster);
+  assert.deepEqual(scene.actors, []);
+  assert.equal(shouldGeneratePasserby(scene), true);
 });
 test('每次按照最新地点区分在场、其他地点和未知地点', () => {
   const stat = {

@@ -1,0 +1,28 @@
+<%_ {
+const s = getvar('stat_data', { defaults: {} });
+const v = s?.player?.area?.place;
+const place = Array.isArray(v) ? v[0] : v;
+const battle = s?.aiBattle;
+const selected = Array.isArray(battle?.enemies) && battle.enemies.some(enemy => enemy?.name === '训练人偶');
+const missingEnemies = !Array.isArray(battle?.enemies) || battle.enemies.length === 0;
+if (place === '训练场' && (battle?.status !== 'active' || missingEnemies || selected)) {
+_%>
+<敌人详情>
+名称: 训练人偶
+称呼: 叙述中称它为“训练人偶”“人偶”或“它”；“人偶”是完整词，不将其中的“人”替换成“你”。“你”指玩家，不指训练人偶。
+类别: 无生命的学院训练造物
+适合等级: 1～3级；普通初学者适用
+外观: 木制人形训练装置，底座上的魔晶维持简单动作。
+固定数值:
+  等级: 1
+  最大生命: 5
+  最大魔力: 0
+  敏捷: 2
+  护甲: 2
+攻击: 普通攻击，命中和伤害按照战斗规则结算。
+防御: 临时护甲增加2，持续至自身下次行动开始。
+行动模式: 防御、防御、攻击，按此顺序反复循环。turns 为已完成的敌方行动数；turns 除以3的余数为0或1时下一行动是防御，为2时下一行动是攻击。每次行动后 turns 增加1，更新下一次意图。
+演绎: 不说话，没有情绪与心理；根据已结算结果描写木制肢体与魔晶的动作。
+</敌人详情>
+<%_ } _%>
+<%_ } _%>

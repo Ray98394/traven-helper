@@ -12,8 +12,10 @@ const present = Array.isArray(entry?.present) ? [...new Set(entry.present.filter
 _%>
 <current_scene>
 <%_ if (valid) { _%>
+{{char}}是角色卡的名称，不是人物，也不会作为说话人或实体出场；以[旁白]描写场景。只有明确存在于当前场景的人物才可发言。
 The live location below overrides earlier settings and speakers. If the player changed location, continue at the current location, not the old scene. Only configured characters in present may act or speak here in person; absent characters may be mentioned but cannot appear without a location change. Remote communication requires an established means. Background NPCs are allowed. Do not force present characters to speak or decide the player's actions.
-Unrecognized characters may be named in narration or by others. Use their real names in speaker tags; the interface hides their names until the player learns their identity through an introduction.
+When the player is interacting with a character, focus the narration on that interaction. Other characters remain present and may participate naturally when the player addresses or notices them, their actions are directly relevant, or the scene calls for it. Do not repeatedly describe their actions, glances, or reactions merely to indicate that they are still present.
+For characters whose known value is false, narration must describe visible traits or role instead of revealing their names until the player can associate the name with the person through an explicit introduction in the story. Other characters may naturally use names they know; merely hearing a name does not establish identity. Speaker tags must always use the real character name for rendering, even before an introduction. Never infer what the player knows from speaker tags.
 <%- JSON.stringify({ location, present }) %>
 <%_ } else { _%>
 Current location or character data is unavailable. Do not infer physical presence from old dialogue; ask for or establish the current situation.

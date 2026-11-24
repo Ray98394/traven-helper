@@ -68,6 +68,93 @@
           },
           "additionalProperties": {}
         },
+        "level": {
+          "default": 1,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "attributes": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "dexterity": {
+              "default": 10,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            },
+            "constitution": {
+              "default": 10,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            },
+            "intelligence": {
+              "default": 10,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          }
+        },
+        "armor": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "base": {
+              "default": 3,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "equipment": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "magic": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "health": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "current": {
+              "default": 10,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "max": {
+              "default": 10,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "mana": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "current": {
+              "default": 10,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "max": {
+              "default": 10,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          }
+        },
         "party": {
           "default": [],
           "type": "array",
@@ -101,6 +188,187 @@
     "_locationsInit": {
       "default": false,
       "type": "boolean"
+    },
+    "_sceneStart": {
+      "default": 0,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "aiBattle": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "status": {
+          "default": "inactive",
+          "type": "string",
+          "enum": [
+            "inactive",
+            "active",
+            "victory",
+            "defeat",
+            "escaped"
+          ]
+        },
+        "location": {
+          "default": "",
+          "type": "string"
+        },
+        "round": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "defending": {
+          "default": false,
+          "type": "boolean"
+        },
+        "startHealth": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "order": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "enemies": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "health": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "maxHealth": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "mana": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "maxMana": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "dexterity": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              },
+              "defending": {
+                "type": "boolean"
+              },
+              "turns": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "intent": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "health",
+              "maxHealth",
+              "mana",
+              "maxMana",
+              "dexterity",
+              "defending",
+              "turns",
+              "intent"
+            ]
+          }
+        }
+      }
+    },
+    "tavernOrders": {
+      "default": {
+        "day": 0,
+        "purchases": {}
+      },
+      "type": "object",
+      "properties": {
+        "day": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "purchases": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "day",
+        "purchases"
+      ]
+    },
+    "characterMemories": {
+      "default": {},
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "day": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "date": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "day",
+            "date",
+            "location",
+            "text"
+          ]
+        }
+      }
     },
     "outfits": {
       "default": {},
@@ -161,7 +429,6 @@
               "陌生",
               "有所保留",
               "熟悉",
-              "亲近",
               "特别在意",
               "明确心意",
               "心意满溢",
@@ -171,6 +438,99 @@
           },
           "confessed": {
             "type": "boolean"
+          },
+          "combat": {
+            "type": "object",
+            "properties": {
+              "level": {
+                "default": 1,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              },
+              "attributes": {
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "dexterity": {
+                    "default": 10,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20
+                  },
+                  "constitution": {
+                    "default": 10,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20
+                  },
+                  "intelligence": {
+                    "default": 10,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20
+                  }
+                }
+              },
+              "magic": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "health": {
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "current": {
+                    "default": 10,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "max": {
+                    "default": 10,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  }
+                }
+              },
+              "mana": {
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "current": {
+                    "default": 10,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "max": {
+                    "default": 10,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  }
+                }
+              },
+              "energy": {
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "current": {
+                    "default": 4,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "max": {
+                    "default": 4,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                }
+              }
+            },
+            "additionalProperties": {}
           }
         },
         "required": [
@@ -220,5 +580,50 @@
   "required": [
     "characters"
   ],
-  "additionalProperties": {}
+  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "结晶": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "爆裂": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "奥秘": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "纹章": {
+          "$ref": "#/$defs/__schema1"
+        }
+      }
+    },
+    "__schema1": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "proficiency": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "progress": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "learnedSpells": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
 }

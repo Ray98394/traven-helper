@@ -1,4 +1,4 @@
-export const affectionStages = ['陌生', '有所保留', '熟悉', '亲近', '特别在意', '明确心意', '心意满溢', '恋人', '被拒绝'] as const;
+export const affectionStages = ['陌生', '有所保留', '熟悉', '特别在意', '明确心意', '心意满溢', '恋人', '被拒绝'] as const;
 export type AffectionStage = typeof affectionStages[number];
 const unwrap = (value: unknown) => Array.isArray(value) ? value[0] : value;
 
@@ -8,7 +8,7 @@ export function getAffectionStage(affection: unknown, known: unknown, current?: 
   if (unwrap(known) !== true && unwrap(known) !== 1) return '陌生';
   const value = Number(unwrap(affection));
   if (!Number.isFinite(value)) return '有所保留';
-  return value >= 100 ? '心意满溢' : value >= 80 ? '明确心意' : value >= 60 ? '特别在意' : value >= 40 ? '亲近' : value >= 20 ? '熟悉' : '有所保留';
+  return value >= 100 ? '心意满溢' : value >= 75 ? '明确心意' : value >= 50 ? '特别在意' : value >= 25 ? '熟悉' : '有所保留';
 }
 
 export function syncAffectionStage(role: Record<string, unknown>): boolean {

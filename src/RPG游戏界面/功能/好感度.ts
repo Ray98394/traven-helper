@@ -32,8 +32,11 @@ export function writeAffection(raw: RawCharacter, data: Affection): void {
 export function protectAffection(next: RawCharacter, previous: RawCharacter): void {
   const old = readAffection(previous);
   const proposed = readAffection(next);
+  const naturalAffection = proposed.affection > old.affection
+    ? old.affection >= 50 ? old.affection : Math.min(proposed.affection, old.affection + 3, 50)
+    : proposed.affection;
   writeAffection(next, {
-    affection: old.stage === '被拒绝' ? 99 : old.affection === 100 ? 100 : proposed.affection,
+    affection: old.stage === '被拒绝' ? 99 : old.affection === 100 ? 100 : naturalAffection,
     stage: old.stage,
     confessed: old.confessed,
   });

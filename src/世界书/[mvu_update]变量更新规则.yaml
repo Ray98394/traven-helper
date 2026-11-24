@@ -1,43 +1,7 @@
 ---
 变量更新规则:
-  time:
-    check:
-      - 年月日与天数由界面在玩家休息时统一更新，模型不得修改。
-  player.energy:
-    check:
-      - 由界面移动和每日刷新管理，模型不得修改。
-  player.area:
-    check:
-      - 由界面移动和每日刷新管理，模型不得修改。
-  locations:
-    check:
-      - 每个地点的在场角色数组由程序根据角色日程和移动更新，模型不得修改；一个角色只能出现在一个地点。
-  outfits:
-    check:
-      - 由特殊事件脚本控制，模型不得修改；未指定时按角色所在地点自动选择。
-  states:
-    check:
-      - state 由地点规则或特殊事件脚本更新，模型不得修改；只使用该角色详情中允许的状态。
-  characters.${角色名}.known:
-    type: boolean
-    check:
-      - 表示玩家是否已将角色的名字与本人对应起来；角色之间互相认识不代表玩家认识该角色。
-      - 未认识的角色与玩家对话或出现并不自动认识；角色自我介绍，或他人明确向玩家介绍该角色并能确认本人时，更新为true。
-      - 他人在谈话中提起姓名、角色在场但没有向玩家说明身份，不自动更新；设为true后不得改回false。
-      - 其他角色可以正常提及未认识角色的名字，正文与旁白不需要隐藏这些名字。
-  characters.${角色名}.affection:
-    type: number
-    range: 0~100
-    check:
-      - 根据该角色知道的本轮实际互动调整；普通事件增减1~3，重要事件增减5~10，未发生明显影响则不变。
-      - 达到100后不降低；好感度阶段为被拒绝时保持99。玩家通过界面测试时可手动调整。
-      - 未认识时为陌生阶段；认识后0~19、20~39、40~59、60~79、80~99依次表现为有所保留、熟悉、亲近、特别在意、明确心意；蕾拉妮始终是玩家的青梅竹马。
-      - 好感度达到100且表白未触发时，由界面显示该角色的表白与选择。不要在正文中代替玩家作出选择。
-  characters.${角色名}.stage:
-    type: string
-    check:
-      - 普通阶段由程序根据是否认识和好感度计算；表白后由玩家选择进入恋人或被拒绝阶段，模型不得修改此变量。
-  characters.${角色名}.confessed:
-    type: boolean
-    check:
-      - 只由界面写入，模型不得输出更新。
+  可修改:
+    aiBattle: 仅在训练场实际开始或进行战斗时按训练战斗规则更新；结束后更新 status。允许在战斗中按实际结算更新 player.health.current 和 player.mana.current，不得修改上限。
+    characters.${角色名}.known: 玩家将名字与本人对应时为 true：角色自我介绍，或他人明确向玩家介绍并能确认本人。仅在场、对话、听到他人称呼或角色互相认识均不算；设为 true 后不得改回 false。
+    characters.${角色名}.affection: 数字 0~100，仅按角色知道的本轮互动调整；自然增长每次 1~3 点，最多增长至 50 点，当前值达到或超过 50 后不再自然增长。无明显影响则不变；负面互动仍可按普通事件减少 1~3 点、重要事件减少 5~10 点。达到 100 后不降低，被拒绝阶段保持 99。
+  界面控制: time、player.energy、player.area、player.level、player.attributes、player.armor、player.magic、player.health.max、player.mana.max、locations、tavernOrders、characterMemories、outfits、states、characters.${角色名}.combat、characters.${角色名}.stage 和 characters.${角色名}.confessed 由程序或玩家选择更新，模型不得修改。player.health.current 与 player.mana.current 仅按训练战斗规则在战斗中更新。金币由界面管理。表白与恋人选择由界面处理，不替玩家选择；蕾拉妮始终是青梅竹马。

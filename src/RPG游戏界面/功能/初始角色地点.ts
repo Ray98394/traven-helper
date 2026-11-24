@@ -8,17 +8,21 @@ const unwrap = (value: unknown) => Array.isArray(value) ? value[0] : value;
 export function fillInitialRoleLocations(stat: Record<string, any>, schedules: Schedules, initialDay: number, random: () => number = Math.random): boolean {
   let changed = false;
   if (!object(stat.locations)) { stat.locations = {}; changed = true; }
-  if (unwrap(stat._locationsInit) === true) return changed;
-  if (unwrap(stat.time?.day) === initialDay && Object.keys(characterLocations(stat)).length === 0) {
+  const empty = Object.keys(characterLocations(stat)).length === 0;
+  const initialDateWithoutLocations = unwrap(stat.time?.day) === initialDay && empty;
+  if (unwrap(stat._locationsInit) === true && !initialDateWithoutLocations) return changed;
+  if (initialDateWithoutLocations) {
     const date = parseDate(stat.time);
     if (!date) return changed;
     for (const [name, schedule] of Object.entries(schedules)) {
       const location = scheduledLocation(name, schedule, date, random);
-      if (location) moveCharacter(stat, name, location);
+      if (location) { moveCharacter(stat, name, location); changed = true; }
     }
   }
-  if (Array.isArray(stat._locationsInit)) stat._locationsInit[0] = true;
-  else stat._locationsInit = true;
-  changed = true;
+  if (unwrap(stat._locationsInit) !== true) {
+    if (Array.isArray(stat._locationsInit)) stat._locationsInit[0] = true;
+    else stat._locationsInit = true;
+    changed = true;
+  }
   return changed;
 }

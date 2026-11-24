@@ -14,7 +14,7 @@ export function readKnowledge(roles: unknown): Knowledge {
     .map(([name, role]) => [name, knowsRole(role)]));
 }
 
-/** 只遮罩配置角色的说话人标题，不改动正文、旁白或其他人物提及的名字。 */
+/** 只遮罩未认识角色的发言者标题，不修改正文。 */
 export function displaySpeaker(name: string, knowledge: Knowledge): string {
   return Object.hasOwn(knowledge, name) && !knowledge[name] ? '？？？' : name;
 }
